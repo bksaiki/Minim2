@@ -42,28 +42,28 @@ typedef uintptr_t mobj;
 #define MFORWARD_MARKER ((mobj)0x3E)
 
 /* Immediate values */
-#define MINIM_FALSE     ((mobj)0x06)
-#define MINIM_TRUE      ((mobj)0x0E)
-#define MINIM_NULL      ((mobj)0x16)
+#define Mfalse     ((mobj)0x06)
+#define Mtrue      ((mobj)0x0E)
+#define Mnull      ((mobj)0x16)
 
 /* ----------------------------------------------------------------------
  * Predicates
  * -------------------------------------------------------------------- */
 
-static inline int minim_fixnump(mobj v)    { return (v & MTAG_MASK) == MTAG_FIXNUM; }
-static inline int minim_pairp(mobj v)      { return (v & MTAG_MASK) == MTAG_PAIR; }
-static inline int minim_flonump(mobj v)    { return (v & MTAG_MASK) == MTAG_FLONUM; }
-static inline int minim_symbolp(mobj v)    { return (v & MTAG_MASK) == MTAG_SYMBOL; }
-static inline int minim_immediatep(mobj v) { return (v & MTAG_MASK) == MTAG_IMMEDIATE; }
-static inline int minim_typed_objp(mobj v) { return (v & MTAG_MASK) == MTAG_TYPED_OBJ; }
+static inline int Mfixnump(mobj v)    { return (v & MTAG_MASK) == MTAG_FIXNUM; }
+static inline int Mpairp(mobj v)      { return (v & MTAG_MASK) == MTAG_PAIR; }
+static inline int Mflonump(mobj v)    { return (v & MTAG_MASK) == MTAG_FLONUM; }
+static inline int Msymbolp(mobj v)    { return (v & MTAG_MASK) == MTAG_SYMBOL; }
+static inline int Mimmediatep(mobj v) { return (v & MTAG_MASK) == MTAG_IMMEDIATE; }
+static inline int Mtyped_objp(mobj v) { return (v & MTAG_MASK) == MTAG_TYPED_OBJ; }
 
-static inline int minim_nullp(mobj v)  { return v == MINIM_NULL; }
-static inline int minim_truep(mobj v)  { return v == MINIM_TRUE; }
-static inline int minim_falsep(mobj v) { return v == MINIM_FALSE; }
-static inline int minim_booleanp(mobj v) { return (v & ~(mobj)0x08) == MINIM_FALSE; }
+static inline int Mnullp(mobj v)  { return v == Mnull; }
+static inline int Mtruep(mobj v)  { return v == Mtrue; }
+static inline int Mfalsep(mobj v) { return v == Mfalse; }
+static inline int Mbooleanp(mobj v) { return (v & ~(mobj)0x08) == Mfalse; }
 
-static inline int minim_vectorp(mobj v) {
-    if (!minim_typed_objp(v)) return 0;
+static inline int Mvectorp(mobj v) {
+    if (!Mtyped_objp(v)) return 0;
     mobj header = *(mobj *)((uintptr_t)v - MTAG_TYPED_OBJ);
     return (header & MSEC_MASK) == MSEC_VECTOR;
 }
@@ -72,28 +72,28 @@ static inline int minim_vectorp(mobj v) {
  * Constructors and accessors for immediates / fixnums
  * -------------------------------------------------------------------- */
 
-static inline mobj  minim_make_fixnum(intptr_t n) { return (mobj)((uintptr_t)n << 3); }
-static inline intptr_t minim_fixnum_value(mobj v) { return (intptr_t)v >> 3; }
+static inline mobj  Mfixnum(intptr_t n) { return (mobj)((uintptr_t)n << 3); }
+static inline intptr_t Mfixnum_val(mobj v) { return (intptr_t)v >> 3; }
 
 /* ----------------------------------------------------------------------
  * Pair accessors / mutators
  * -------------------------------------------------------------------- */
 
-static inline mobj *minim_pair_slots(mobj v) {
+static inline mobj *Mpair_slots(mobj v) {
     return (mobj *)((uintptr_t)v - MTAG_PAIR);
 }
 
-static inline mobj minim_car(mobj v) { return minim_pair_slots(v)[0]; }
-static inline mobj minim_cdr(mobj v) { return minim_pair_slots(v)[1]; }
+static inline mobj Mcar(mobj v) { return Mpair_slots(v)[0]; }
+static inline mobj Mcdr(mobj v) { return Mpair_slots(v)[1]; }
 
-static inline void minim_set_car(mobj p, mobj v) { minim_pair_slots(p)[0] = v; }
-static inline void minim_set_cdr(mobj p, mobj v) { minim_pair_slots(p)[1] = v; }
+static inline void Mset_car(mobj p, mobj v) { Mpair_slots(p)[0] = v; }
+static inline void Mset_cdr(mobj p, mobj v) { Mpair_slots(p)[1] = v; }
 
 /* ----------------------------------------------------------------------
  * Flonum accessor
  * -------------------------------------------------------------------- */
 
-static inline double minim_flonum_value(mobj v) {
+static inline double Mflonum_val(mobj v) {
     double d;
     /* offset 8: skip the 8-byte header */
     __builtin_memcpy(&d, (void *)((uintptr_t)v - MTAG_FLONUM + 8), sizeof(d));
@@ -104,31 +104,31 @@ static inline double minim_flonum_value(mobj v) {
  * Vector accessors / mutators
  * -------------------------------------------------------------------- */
 
-static inline mobj *minim_vector_header(mobj v) {
+static inline mobj *Mvector_header(mobj v) {
     return (mobj *)((uintptr_t)v - MTAG_TYPED_OBJ);
 }
 
-static inline size_t minim_vector_length(mobj v) {
-    return (size_t)(minim_vector_header(v)[0] >> 4);
+static inline size_t Mvector_length(mobj v) {
+    return (size_t)(Mvector_header(v)[0] >> 4);
 }
 
-static inline mobj *minim_vector_slots(mobj v) {
-    return minim_vector_header(v) + 1;
+static inline mobj *Mvector_slots(mobj v) {
+    return Mvector_header(v) + 1;
 }
 
-static inline mobj minim_vector_ref(mobj v, size_t i) {
-    return minim_vector_slots(v)[i];
+static inline mobj Mvector_ref(mobj v, size_t i) {
+    return Mvector_slots(v)[i];
 }
 
-static inline void minim_vector_set(mobj v, size_t i, mobj x) {
-    minim_vector_slots(v)[i] = x;
+static inline void Mvector_set(mobj v, size_t i, mobj x) {
+    Mvector_slots(v)[i] = x;
 }
 
 /* ----------------------------------------------------------------------
  * Symbol accessor
  * -------------------------------------------------------------------- */
 
-static inline const char *minim_symbol_name(mobj v) {
+static inline const char *Msymbol_name(mobj v) {
     return *(const char **)((uintptr_t)v - MTAG_SYMBOL + 8);
 }
 
@@ -136,13 +136,13 @@ static inline const char *minim_symbol_name(mobj v) {
  * Allocation
  * -------------------------------------------------------------------- */
 
-void minim_init(void);
-void minim_shutdown(void);
+void Minit(void);
+void Mshutdown(void);
 
-mobj minim_cons(mobj car, mobj cdr);
-mobj minim_make_vector(size_t length, mobj fill);
-mobj minim_make_flonum(double d);
-mobj minim_intern(const char *name);
+mobj Mcons(mobj car, mobj cdr);
+mobj Mmake_vector(size_t length, mobj fill);
+mobj Mmake_flonum(double d);
+mobj Mintern(const char *name);
 
 /* ----------------------------------------------------------------------
  * Roots: shadow stack + globals

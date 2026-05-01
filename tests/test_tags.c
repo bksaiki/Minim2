@@ -6,8 +6,8 @@
  * --------------------------------------------------------------------- */
 
 static void test_init_shutdown(void) {
-    minim_init();
-    minim_shutdown();
+    Minit();
+    Mshutdown();
     CHECK(1, "init/shutdown smoke test");
 }
 
@@ -18,11 +18,11 @@ static void test_init_shutdown(void) {
 static void test_fixnum_roundtrip(void) {
     intptr_t values[] = { 0, 1, -1, 42, -42, (intptr_t)((1LL << 60) - 1), -(1LL << 60) };
     for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
-        mobj v = minim_make_fixnum(values[i]);
-        CHECK(minim_fixnump(v), "fixnum: tag check");
-        CHECK(!minim_pairp(v), "fixnum: not pair");
-        CHECK(!minim_immediatep(v), "fixnum: not immediate");
-        CHECK(minim_fixnum_value(v) == values[i], "fixnum: value round-trip");
+        mobj v = Mfixnum(values[i]);
+        CHECK(Mfixnump(v), "fixnum: tag check");
+        CHECK(!Mpairp(v), "fixnum: not pair");
+        CHECK(!Mimmediatep(v), "fixnum: not immediate");
+        CHECK(Mfixnum_val(v) == values[i], "fixnum: value round-trip");
     }
 }
 
@@ -35,39 +35,39 @@ static void test_tags_dont_overlap(void) {
 }
 
 static void test_immediate_constants(void) {
-    CHECK(minim_falsep(MINIM_FALSE), "false: falsep");
-    CHECK(minim_immediatep(MINIM_FALSE), "false: immediatep");
-    CHECK(!minim_truep(MINIM_FALSE), "false: not truep");
-    CHECK(!minim_nullp(MINIM_FALSE), "false: not nullp");
+    CHECK(Mfalsep(Mfalse), "false: falsep");
+    CHECK(Mimmediatep(Mfalse), "false: immediatep");
+    CHECK(!Mtruep(Mfalse), "false: not truep");
+    CHECK(!Mnullp(Mfalse), "false: not nullp");
 
-    CHECK(minim_truep(MINIM_TRUE), "true: truep");
-    CHECK(minim_immediatep(MINIM_TRUE), "true: immediatep");
-    CHECK(!minim_falsep(MINIM_TRUE), "true: not falsep");
+    CHECK(Mtruep(Mtrue), "true: truep");
+    CHECK(Mimmediatep(Mtrue), "true: immediatep");
+    CHECK(!Mfalsep(Mtrue), "true: not falsep");
 
-    CHECK(minim_nullp(MINIM_NULL), "null: nullp");
-    CHECK(minim_immediatep(MINIM_NULL), "null: immediatep");
-    CHECK(!minim_falsep(MINIM_NULL), "null: not falsep");
-    CHECK(!minim_truep(MINIM_NULL), "null: not truep");
+    CHECK(Mnullp(Mnull), "null: nullp");
+    CHECK(Mimmediatep(Mnull), "null: immediatep");
+    CHECK(!Mfalsep(Mnull), "null: not falsep");
+    CHECK(!Mtruep(Mnull), "null: not truep");
 
-    CHECK(minim_booleanp(MINIM_TRUE), "booleanp: #t");
-    CHECK(minim_booleanp(MINIM_FALSE), "booleanp: #f");
-    CHECK(!minim_booleanp(MINIM_NULL), "booleanp: not null");
+    CHECK(Mbooleanp(Mtrue), "booleanp: #t");
+    CHECK(Mbooleanp(Mfalse), "booleanp: #f");
+    CHECK(!Mbooleanp(Mnull), "booleanp: not null");
 }
 
 static void test_immediate_values(void) {
-    CHECK(MINIM_FALSE == (mobj)0x06, "MINIM_FALSE == 0x06");
-    CHECK(MINIM_TRUE == (mobj)0x0E, "MINIM_TRUE  == 0x0E");
-    CHECK(MINIM_NULL == (mobj)0x16, "MINIM_NULL  == 0x16");
+    CHECK(Mfalse == (mobj)0x06, "MFALSE == 0x06");
+    CHECK(Mtrue == (mobj)0x0E, "MTRUE  == 0x0E");
+    CHECK(Mnull == (mobj)0x16, "MNULL  == 0x16");
     CHECK(MFORWARD_MARKER == (mobj)0x3E, "MFORWARD_MARKER == 0x3E");
 }
 
 static void test_fixnum_zero_tag(void) {
     /* Fixnum tag is 0 — so fixnum arithmetic works without untagging */
-    mobj a = minim_make_fixnum(3);
-    mobj b = minim_make_fixnum(5);
+    mobj a = Mfixnum(3);
+    mobj b = Mfixnum(5);
     mobj sum = (mobj)(a + b);
-    CHECK(minim_fixnump(sum), "fixnum: sum is fixnum");
-    CHECK(minim_fixnum_value(sum) == 8, "fixnum: 3+5==8 without untag");
+    CHECK(Mfixnump(sum), "fixnum: sum is fixnum");
+    CHECK(Mfixnum_val(sum) == 8, "fixnum: 3+5==8 without untag");
 }
 
 int main(void) {

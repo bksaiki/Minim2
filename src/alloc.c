@@ -5,15 +5,15 @@
 
 #define HEAP_INITIAL_BYTES (1024 * 1024) /* 1 MiB per semispace */
 
-void minim_init(void) {
+void Minit(void) {
     gc_init(HEAP_INITIAL_BYTES);
 }
 
-void minim_shutdown(void) {
+void Mshutdown(void) {
     gc_shutdown();
 }
 
-mobj minim_cons(mobj car, mobj cdr) {
+mobj Mcons(mobj car, mobj cdr) {
     MINIM_GC_FRAME_BEGIN;
     MINIM_GC_PROTECT2(car, cdr);
     char *p = gc_alloc(16);
@@ -23,7 +23,7 @@ mobj minim_cons(mobj car, mobj cdr) {
     return (mobj)((uintptr_t)p | MTAG_PAIR);
 }
 
-mobj minim_make_flonum(double d) {
+mobj Mmake_flonum(double d) {
     MINIM_GC_FRAME_BEGIN;
     char *p = gc_alloc(16);
     ((mobj *)p)[0] = MTAG_FLONUM; /* header */
@@ -32,7 +32,7 @@ mobj minim_make_flonum(double d) {
     return (mobj)((uintptr_t)p | MTAG_FLONUM);
 }
 
-mobj minim_make_vector(size_t length, mobj fill) {
+mobj Mmake_vector(size_t length, mobj fill) {
     MINIM_GC_FRAME_BEGIN;
     MINIM_GC_PROTECT(fill);
     size_t sz = (size_t)(8 + 8 * length);

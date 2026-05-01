@@ -6,58 +6,58 @@
  * --------------------------------------------------------------------- */
 
 static void test_cons_list_1000(void) {
-    minim_init();
+    Minit();
 
     /* Build a list: (999 998 ... 1 0) */
-    mobj lst = MINIM_NULL;
+    mobj lst = Mnull;
     MINIM_GC_FRAME_BEGIN;
     MINIM_GC_PROTECT(lst);
     for (int i = 0; i < 1000; i++)
-        lst = minim_cons(minim_make_fixnum(i), lst);
+        lst = Mcons(Mfixnum(i), lst);
 
     /* Walk and verify values descend from 999 to 0 */
     int expected = 999;
     int ok = 1;
     mobj cur = lst;
-    while (!minim_nullp(cur)) {
-        CHECK(minim_pairp(cur), "cons list: element is pair");
-        if (minim_fixnum_value(minim_car(cur)) != expected)
+    while (!Mnullp(cur)) {
+        CHECK(Mpairp(cur), "cons list: element is pair");
+        if (Mfixnum_val(Mcar(cur)) != expected)
             ok = 0;
-        cur = minim_cdr(cur);
+        cur = Mcdr(cur);
         expected--;
     }
     CHECK(ok, "cons list: all 1000 values correct");
     CHECK(expected == -1, "cons list: exactly 1000 elements");
 
     MINIM_GC_FRAME_END;
-    minim_shutdown();
+    Mshutdown();
 }
 
 static void test_flonum_heap_roundtrip(void) {
-    minim_init();
-    mobj v = minim_make_flonum(3.14159);
-    CHECK(minim_flonump(v), "flonum: tag");
-    CHECK(minim_flonum_value(v) == 3.14159, "flonum: value round-trip");
-    minim_shutdown();
+    Minit();
+    mobj v = Mmake_flonum(3.14159);
+    CHECK(Mflonump(v), "flonum: tag");
+    CHECK(Mflonum_val(v) == 3.14159, "flonum: value round-trip");
+    Mshutdown();
 }
 
 static void test_vector_smoke(void) {
-    minim_init();
+    Minit();
     MINIM_GC_FRAME_BEGIN;
 
-    mobj v = minim_make_vector(10, minim_make_fixnum(0));
+    mobj v = Mmake_vector(10, Mfixnum(0));
     MINIM_GC_PROTECT(v);
 
-    CHECK(minim_vectorp(v), "vector: vectorp");
-    CHECK(minim_vector_length(v) == 10, "vector: length 10");
+    CHECK(Mvectorp(v), "vector: vectorp");
+    CHECK(Mvector_length(v) == 10, "vector: length 10");
     for (size_t i = 0; i < 10; i++)
-        CHECK(minim_fixnum_value(minim_vector_ref(v, i)) == 0, "vector: fill is 0");
+        CHECK(Mfixnum_val(Mvector_ref(v, i)) == 0, "vector: fill is 0");
 
-    minim_vector_set(v, 5, minim_make_fixnum(42));
-    CHECK(minim_fixnum_value(minim_vector_ref(v, 5)) == 42, "vector: set/ref round-trip");
+    Mvector_set(v, 5, Mfixnum(42));
+    CHECK(Mfixnum_val(Mvector_ref(v, 5)) == 42, "vector: set/ref round-trip");
 
     MINIM_GC_FRAME_END;
-    minim_shutdown();
+    Mshutdown();
 }
 
 int main(void) {

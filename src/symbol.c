@@ -38,7 +38,7 @@ static void intern_table_init(void) {
     if (!intern_table) { fprintf(stderr, "minim: intern table OOM\n"); abort(); }
 }
 
-mobj minim_intern(const char *name) {
+mobj Mintern(const char *name) {
     if (!intern_table) intern_table_init();
 
     size_t len = strlen(name);
@@ -46,7 +46,7 @@ mobj minim_intern(const char *name) {
 
     /* Search existing bucket */
     for (intern_bucket *b = intern_table[idx]; b; b = b->next) {
-        const char *bname = minim_symbol_name(b->symbol);
+        const char *bname = Msymbol_name(b->symbol);
         if (strcmp(bname, name) == 0)
             return b->symbol;
     }

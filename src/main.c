@@ -3,6 +3,8 @@
 #include <stdio.h>
 
 int main(void) {
-    printf("minim2\n");
+    Minit();
+
+    Mshutdown();
     return 0;
 }
