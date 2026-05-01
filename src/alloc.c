@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-#define HEAP_INITIAL_BYTES (1024 * 1024)  /* 1 MiB per semispace */
+#define HEAP_INITIAL_BYTES (1024 * 1024) /* 1 MiB per semispace */
 
 void minim_init(void) {
     gc_init(HEAP_INITIAL_BYTES);
@@ -26,7 +26,7 @@ mobj minim_cons(mobj car, mobj cdr) {
 mobj minim_make_flonum(double d) {
     MINIM_GC_FRAME_BEGIN;
     char *p = gc_alloc(16);
-    ((mobj *)p)[0] = MTAG_FLONUM;  /* header */
+    ((mobj *)p)[0] = MTAG_FLONUM; /* header */
     memcpy(p + 8, &d, sizeof(double));
     MINIM_GC_FRAME_END;
     return (mobj)((uintptr_t)p | MTAG_FLONUM);

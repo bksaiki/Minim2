@@ -12,15 +12,15 @@
  * --------------------------------------------------------------------- */
 
 typedef struct intern_bucket {
-    mobj              symbol; /* tagged mobj; also a global root */
+    mobj symbol; /* tagged mobj; also a global root */
     struct intern_bucket *next;
 } intern_bucket;
 
 #define INTERN_TABLE_INIT_SIZE 64
 
-static intern_bucket **intern_table     = NULL;
-static size_t          intern_table_sz  = 0;
-static size_t          intern_table_n   = 0;   /* total interned symbols */
+static intern_bucket **intern_table = NULL;
+static size_t intern_table_sz = 0;
+static size_t intern_table_n = 0; /* total interned symbols */
 
 static unsigned long hash_name(const char *s, size_t len) {
     /* FNV-1a 64-bit */
@@ -41,8 +41,8 @@ static void intern_table_init(void) {
 mobj minim_intern(const char *name) {
     if (!intern_table) intern_table_init();
 
-    size_t len  = strlen(name);
-    size_t idx  = (size_t)(hash_name(name, len) % intern_table_sz);
+    size_t len = strlen(name);
+    size_t idx = (size_t)(hash_name(name, len) % intern_table_sz);
 
     /* Search existing bucket */
     for (intern_bucket *b = intern_table[idx]; b; b = b->next) {
@@ -69,7 +69,7 @@ mobj minim_intern(const char *name) {
     intern_bucket *b = malloc(sizeof(intern_bucket));
     if (!b) { fprintf(stderr, "minim: intern bucket OOM\n"); abort(); }
     b->symbol = sym;
-    b->next   = intern_table[idx];
+    b->next = intern_table[idx];
     intern_table[idx] = b;
     intern_table_n++;
 

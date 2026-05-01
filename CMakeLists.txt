@@ -17,22 +17,12 @@ add_executable(minim
     src/main.c
     ${MINIM_RUNTIME_SOURCES}
 )
-target_include_directories(minim PRIVATE include src)
+
+target_include_directories(minim PRIVATE include)
 
 if(MINIM_GC_STRESS)
     target_compile_definitions(minim PRIVATE MINIM_GC_STRESS=1)
 endif()
 
 enable_testing()
-
-add_executable(minim_test_gc
-    tests/test_gc.c
-    ${MINIM_RUNTIME_SOURCES}
-)
-target_include_directories(minim_test_gc PRIVATE include src)
-
-if(MINIM_GC_STRESS)
-    target_compile_definitions(minim_test_gc PRIVATE MINIM_GC_STRESS=1)
-endif()
-
-add_test(NAME gc COMMAND minim_test_gc)
+add_subdirectory(tests)
