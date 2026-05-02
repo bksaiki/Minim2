@@ -98,6 +98,7 @@ static size_t object_size(mobj v) {
     case MTAG_PAIR: return MINIM_PAIR_SIZE;
     case MTAG_FLONUM: return MINIM_FLONUM_SIZE;
     case MTAG_SYMBOL: return MINIM_SYMBOL_SIZE;
+    case MTAG_CLOSURE: return MINIM_CLOSURE_SIZE;
     case MTAG_TYPED_OBJ: {
         /* Every typed-object kind shares the same shape:
          *   header = (slot_count << 4) | secondary_tag
@@ -141,6 +142,15 @@ static void scan_fields(char *base, mobj tag, char *to_base) {
     case MTAG_SYMBOL:
         /* header + char* (outside GC heap) — not forwarded */
         break;
+    case MTAG_CLOSURE: {
+        /* Four fixed mobj slots: params, body, env, name. */
+        mobj *slots = (mobj *)base;
+        forward_tagged(&slots[0], to_base);
+        forward_tagged(&slots[1], to_base);
+        forward_tagged(&slots[2], to_base);
+        forward_tagged(&slots[3], to_base);
+        break;
+    }
     case MTAG_TYPED_OBJ: {
         /* Uniform trace: forward every payload slot. The secondary tag
          * dictates *interpretation* (which slot means what), but the
@@ -255,6 +265,7 @@ static void do_collect(void) {
         case MTAG_PAIR:    sz = MINIM_PAIR_SIZE; break;
         case MTAG_FLONUM:  sz = MINIM_FLONUM_SIZE; break;
         case MTAG_SYMBOL:  sz = MINIM_SYMBOL_SIZE; break;
+        case MTAG_CLOSURE: sz = MINIM_CLOSURE_SIZE; break;
         case MTAG_TYPED_OBJ: {
             mobj header = ((mobj *)heap.scan)[0];
             size_t length = (size_t)(header >> 4);

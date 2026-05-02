@@ -37,7 +37,8 @@ typedef unsigned char mbyte;
 #define MTAG_PAIR       ((mobj)0x1)
 #define MTAG_FLONUM     ((mobj)0x2)
 #define MTAG_SYMBOL     ((mobj)0x3)
-/* 0x4 and 0x5 reserved for future use (closures, strings) */
+/* 0x4 reserved for future use (e.g. strings) */
+#define MTAG_CLOSURE    ((mobj)0x5)
 #define MTAG_IMMEDIATE  ((mobj)0x6)
 #define MTAG_TYPED_OBJ  ((mobj)0x7)
 
@@ -50,10 +51,13 @@ typedef unsigned char mbyte;
  * followed by `slot_count` payload slots, each one machine word wide
  * (mobj or a fixnum-shifted raw word). The GC traces every payload
  * slot uniformly; only the secondary tag's *interpretation* differs
- * between kinds. See docs/EVAL.md for the per-kind slot layout. */
+ * between kinds. See docs/EVAL.md for the per-kind slot layout.
+ *
+ * Closures get their own primary tag (MTAG_CLOSURE) rather than a
+ * secondary tag here — calling a procedure is the hottest path in a
+ * Scheme runtime, so the predicate cost should be one instruction. */
 #define MSEC_VECTOR     ((mobj)0x0)
 #define MSEC_KONT       ((mobj)0x1)  /* spaghetti-stack frame */
-#define MSEC_CLOSURE    ((mobj)0x2)  /* user-defined procedure */
 #define MSEC_ENV        ((mobj)0x3)  /* lexical environment frame */
 #define MSEC_PRIM       ((mobj)0x4)  /* built-in procedure */
 #define MSEC_CONT       ((mobj)0x5)  /* first-class captured continuation */
@@ -130,7 +134,7 @@ static inline bool Mhas_secondary(mobj v, mobj sec) {
     return (header & MSEC_MASK) == sec;
 }
 
-static inline bool Mclosurep(mobj v) { return Mhas_secondary(v, MSEC_CLOSURE); }
+static inline bool Mclosurep(mobj v) { return (v & MTAG_MASK) == MTAG_CLOSURE; }
 static inline bool Menvp(mobj v)     { return Mhas_secondary(v, MSEC_ENV); }
 static inline bool Mkontp(mobj v)    { return Mhas_secondary(v, MSEC_KONT); }
 static inline bool Mprimp(mobj v)    { return Mhas_secondary(v, MSEC_PRIM); }
@@ -175,12 +179,18 @@ static inline mobj Mtyped_obj_ref(mobj v, size_t i) {
     return *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i);
 }
 
-/* Per-kind accessors. Each just wraps Mtyped_obj_ref with a name that
- * documents the slot's role; see docs/EVAL.md for layouts. */
-static inline mobj Mclosure_params(mobj v) { return Mtyped_obj_ref(v, 0); }
-static inline mobj Mclosure_body(mobj v)   { return Mtyped_obj_ref(v, 1); }
-static inline mobj Mclosure_env(mobj v)    { return Mtyped_obj_ref(v, 2); }
-static inline mobj Mclosure_name(mobj v)   { return Mtyped_obj_ref(v, 3); }
+/* Closure: own primary tag, four fixed slots, no header word. */
+static inline mobj *Mclosure_slots(mobj v) {
+    return (mobj *)((uintptr_t)v - MTAG_CLOSURE);
+}
+static inline mobj Mclosure_params(mobj v) { return Mclosure_slots(v)[0]; }
+static inline mobj Mclosure_body(mobj v)   { return Mclosure_slots(v)[1]; }
+static inline mobj Mclosure_env(mobj v)    { return Mclosure_slots(v)[2]; }
+static inline mobj Mclosure_name(mobj v)   { return Mclosure_slots(v)[3]; }
+
+/* Per-kind accessors for the remaining typed-object kinds. Each just
+ * wraps Mtyped_obj_ref with a name that documents the slot's role;
+ * see docs/EVAL.md for layouts. */
 
 static inline mobj Menv_rib(mobj v)        { return Mtyped_obj_ref(v, 0); }
 static inline mobj Menv_parent(mobj v)     { return Mtyped_obj_ref(v, 1); }

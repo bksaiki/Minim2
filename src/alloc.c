@@ -76,7 +76,14 @@ mobj Mvector(size_t length, mobj fill) {
 }
 
 /* ----------------------------------------------------------------------
- * Closure: tag=0x7, 4 slots [params, body, env, name]
+ * Closure: tag=0x5, 4 fixed slots [params, body, env, name].
+ *
+ * Modeled on Chez's `closure_disp_*` layout — closures get their own
+ * primary tag because procedure application is the hottest path in
+ * the runtime. No header word: the size is implied by the tag and is
+ * fixed at MINIM_CLOSURE_SIZE bytes. The GC's forward-marker scheme
+ * uses the first two slots (params/body) of the old location during
+ * a copy, just like pairs.
  * -------------------------------------------------------------------- */
 
 mobj Mclosure(mobj params, mobj body, mobj env, mobj name) {
@@ -85,13 +92,13 @@ mobj Mclosure(mobj params, mobj body, mobj env, mobj name) {
     MINIM_GC_PROTECT(body);
     MINIM_GC_PROTECT(env);
     MINIM_GC_PROTECT(name);
-    mobj v = typed_alloc(4, MSEC_CLOSURE);
-    Mtyped_obj_set(v, 0, params);
-    Mtyped_obj_set(v, 1, body);
-    Mtyped_obj_set(v, 2, env);
-    Mtyped_obj_set(v, 3, name);
+    char *p = gc_alloc(MINIM_CLOSURE_SIZE);
+    ((mobj *)p)[0] = params;
+    ((mobj *)p)[1] = body;
+    ((mobj *)p)[2] = env;
+    ((mobj *)p)[3] = name;
     MINIM_GC_FRAME_END;
-    return v;
+    return (mobj)((uintptr_t)p | MTAG_CLOSURE);
 }
 
 /* ----------------------------------------------------------------------

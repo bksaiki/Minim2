@@ -22,8 +22,8 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 | `001` | 0x1  | `MTAG_PAIR`       | heap base \| 1; 16-byte object                         |
 | `010` | 0x2  | `MTAG_FLONUM`     | heap base \| 2; 16-byte object (header + double)       |
 | `011` | 0x3  | `MTAG_SYMBOL`     | heap base \| 3; 16-byte object (header + name ptr)     |
-| `100` | 0x4  | (reserved)        | unused; future closure or string                       |
-| `101` | 0x5  | (reserved)        | unused; future closure or string                       |
+| `100` | 0x4  | (reserved)        | unused; future string                                  |
+| `101` | 0x5  | `MTAG_CLOSURE`    | heap base \| 5; 32-byte object (4 mobj slots, no header) |
 | `110` | 0x6  | `MTAG_IMMEDIATE`  | constants: `#f=0x06`, `#t=0x0E`, `()=0x26`, `eof=0x36` |
 | `111` | 0x7  | `MTAG_TYPED_OBJ`  | heap base \| 7; first heap word is a secondary tag     |
 

@@ -60,10 +60,62 @@ static void test_vector_smoke(void) {
     Mshutdown();
 }
 
+/* -----------------------------------------------------------------------
+ * Predicate disjointness across the typed-object kinds. Allocates one
+ * of each, exercises every predicate, and confirms that exactly one
+ * fires per kind.
+ * --------------------------------------------------------------------- */
+
+static mobj prim_dummy(mobj args) { (void)args; return Mfalse; }
+
+static void test_kinds_disjoint(void) {
+    Minit();
+    MINIM_GC_FRAME_BEGIN;
+    mobj clo = Mnull, env = Mnull, k = Mnull, p = Mnull, c = Mnull, v = Mnull;
+    mobj rib = Mnull;
+    MINIM_GC_PROTECT(clo);
+    MINIM_GC_PROTECT(env);
+    MINIM_GC_PROTECT(k);
+    MINIM_GC_PROTECT(p);
+    MINIM_GC_PROTECT(c);
+    MINIM_GC_PROTECT(v);
+    MINIM_GC_PROTECT(rib);
+
+    clo = Mclosure(Mnull, Mnull, Mnull, Mfalse);
+    rib = Mvector(0, Mfalse);
+    env = Menv_extend(rib, Mnull);
+    k = Mkont(KONT_HALT, Mnull, Mnull, 0);
+    p = Mprim("p", prim_dummy, 0, -1);
+    c = Mcont(k);
+    v = Mvector(2, Mfalse);
+
+    /* Each kind matches only its own predicate among the typed-object
+     * predicates. */
+    CHECK( Mclosurep(clo) && !Menvp(clo) && !Mkontp(clo) && !Mprimp(clo) && !Mcontp(clo) && !Mvectorp(clo), "kinds: closure");
+    CHECK(!Mclosurep(env) &&  Menvp(env) && !Mkontp(env) && !Mprimp(env) && !Mcontp(env) && !Mvectorp(env), "kinds: env");
+    CHECK(!Mclosurep(k)   && !Menvp(k)   &&  Mkontp(k)   && !Mprimp(k)   && !Mcontp(k)   && !Mvectorp(k),   "kinds: kont");
+    CHECK(!Mclosurep(p)   && !Menvp(p)   && !Mkontp(p)   &&  Mprimp(p)   && !Mcontp(p)   && !Mvectorp(p),   "kinds: prim");
+    CHECK(!Mclosurep(c)   && !Menvp(c)   && !Mkontp(c)   && !Mprimp(c)   &&  Mcontp(c)   && !Mvectorp(c),   "kinds: cont");
+    CHECK(!Mclosurep(v)   && !Menvp(v)   && !Mkontp(v)   && !Mprimp(v)   && !Mcontp(v)   &&  Mvectorp(v),   "kinds: vector");
+
+    /* Procedures: closure, prim, cont. Not env, not kont, not vector. */
+    CHECK(Mprocedurep(clo), "proc: closure is a procedure");
+    CHECK(Mprocedurep(p),   "proc: prim is a procedure");
+    CHECK(Mprocedurep(c),   "proc: cont is a procedure");
+    CHECK(!Mprocedurep(env), "proc: env is not a procedure");
+    CHECK(!Mprocedurep(k),   "proc: kont is not a procedure");
+    CHECK(!Mprocedurep(v),   "proc: vector is not a procedure");
+    CHECK(!Mprocedurep(Mfixnum(0)), "proc: fixnum is not a procedure");
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
 int main(void) {
     test_cons_list_1000();
     test_flonum_heap_roundtrip();
     test_vector_smoke();
+    test_kinds_disjoint();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

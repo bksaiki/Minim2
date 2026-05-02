@@ -16,9 +16,10 @@
 #define MINIM_ALIGN_BYTES 16
 #define MINIM_ALIGN(n)    (((size_t)(n) + (MINIM_ALIGN_BYTES - 1)) & ~(size_t)(MINIM_ALIGN_BYTES - 1))
 
-#define MINIM_PAIR_SIZE   16
-#define MINIM_FLONUM_SIZE 16
-#define MINIM_SYMBOL_SIZE 16
+#define MINIM_PAIR_SIZE    16
+#define MINIM_FLONUM_SIZE  16
+#define MINIM_SYMBOL_SIZE  16
+#define MINIM_CLOSURE_SIZE 32  /* 4 slots × 8 bytes, no header */
 
 /* Vector length is packed into the upper 60 bits of the type word
  * (`(length << 4) | MSEC_VECTOR`), so anything past 2^60 - 1 would lose
