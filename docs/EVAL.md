@@ -142,7 +142,7 @@ function changes.
 slot 0 : name      (symbol, for write)
 slot 1 : arity-min (fixnum)
 slot 2 : arity-max (fixnum, or -1 for varargs)
-slot 3 : fnptr     (raw C function pointer stored as a fixnum-shifted word)
+slot 3 : idx       (index into the primitives table, for dispatch)
 ```
 
 Primitives are first-class — `(map + xs)` works because `+` is a
