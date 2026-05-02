@@ -2,7 +2,7 @@
 
 Tracker for the s-expression reader. Source of truth for the legacy
 implementation: `old_parser.c` at the project root. The new parser lives
-in `src/parser.c` with its public API in `include/parser.h`.
+in `src/read.c` with its public API in `include/minim.h`.
 
 The runtime in v1 supports six concrete types — fixnum, pair, flonum,
 symbol, vector — plus four immediates (`#t`, `#f`, `'()`, `eof`). Reader

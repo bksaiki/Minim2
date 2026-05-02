@@ -1,8 +1,6 @@
 #define _GNU_SOURCE  /* open_memstream */
 
 #include "minim.h"
-#include "parser.h"
-#include "writer.h"
 #include "harness.h"
 
 #include <inttypes.h>

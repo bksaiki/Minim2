@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* ----------------------------------------------------------------------
  * Version
@@ -163,6 +164,42 @@ mobj Mintern(const char *name);
 
 void Minit(void);
 void Mshutdown(void);
+
+/* ----------------------------------------------------------------------
+ * Reader / writer
+ *
+ * `mreader` wraps either a C string or a FILE *; `Mread` consumes one
+ * datum and returns it (or `Meof` at end of input). Allocations during
+ * reading are subject to the GC, so callers holding the result across
+ * further reads must protect it.
+ *
+ * `Mwrite` emits one datum to `out` in s-expression form. It does not
+ * allocate on the GC heap, so the input value does not need protection
+ * across the call.
+ * -------------------------------------------------------------------- */
+
+typedef enum {
+    MREADER_STRING,
+    MREADER_FILE,
+} mreader_kind;
+
+typedef struct mreader {
+    mreader_kind kind;
+    union {
+        struct {
+            const char *buf;
+            size_t pos, len;
+        } s;
+        FILE *fp;
+    } u;
+    int peeked; /* -1 if no peeked char buffered */
+} mreader;
+
+void mreader_init_string(mreader *r, const char *s);
+void mreader_init_file(mreader *r, FILE *fp);
+
+mobj Mread(mreader *r);
+void Mwrite(mobj v, FILE *out);
 
 /* ----------------------------------------------------------------------
  * Interned symbols

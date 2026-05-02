@@ -2,7 +2,7 @@
 
 Tracker for the s-expression printer. Source of truth for the legacy
 implementation: `old_writer.c` at the project root. The new writer lives
-in `src/writer.c` with its public API in `include/writer.h`.
+in `src/write.c` with its public API in `include/minim.h`.
 
 The runtime in v1 supports six concrete types — fixnum, pair, flonum,
 symbol, vector — plus four immediates (`#t`, `#f`, `'()`, `eof`). Writer
@@ -50,8 +50,22 @@ The legacy `old_writer.c` already has the syntax for each.
 
 ## Phase 5 — robustness and ergonomics
 - [ ] Cycle detection in lists/vectors so circular structures print
-      something instead of looping (`#0=(...)` / `#0#`-style labels, or
-      an abort with a clear message as a stopgap).
+      something instead of looping. Plan:
+      - **Stopgap (cheap)**: depth/object-count cap inside `Mwrite`
+        that aborts or emits `...` once exceeded. No extra data
+        structures; fixes the infinite-loop symptom without proper
+        labeling.
+      - **Proper fix**: implement [SRFI-38](https://srfi.schemers.org/srfi-38/srfi-38.html)
+        ("External Representation for Data With Shared Structure"). Two
+        passes: first walks the datum into a hash map keyed by heap
+        pointer, recording any object reached more than once as
+        "shared"; second pass prints, emitting `#N=` on the first
+        occurrence of a shared object and `#N#` on later references.
+        Handles both cycles and acyclic shared sub-structure. Racket
+        and Chez both use this representation. Defer until we have
+        another feature that wants a heap-pointer hash map (e.g.
+        `equal?`, structural equality), so the infrastructure pays for
+        itself twice.
 - [ ] Symbols with delimiter or whitespace characters need `|...|`
       escape form to preserve readability.
 - [ ] Optional pretty-printer (line breaks, indentation) once the basic

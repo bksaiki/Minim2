@@ -1,5 +1,4 @@
 #include "minim.h"
-#include "writer.h"
 
 #include <inttypes.h>
 #include <math.h>
