@@ -6,7 +6,7 @@ The design is a deliberate slim-down of Chez Scheme's runtime (referenced as `c/
 
 ## Scope
 
-**Types supported in v1**: fixnum, pair, flonum, symbol, vector, plus four immediate constants (`#t`, `#f`, `'()`, `eof`). Anything else — closures, strings, bignums, characters, records, ports — is out of scope for now and reserved in the tag space.
+**Types supported in v1**: fixnum, pair, flonum, symbol, vector, character, plus five immediate constants (`#t`, `#f`, `'()`, `eof`, `void`). Closures, env frames, kont frames, and primitive procedures are runtime-internal heap kinds added by the evaluator (see [`docs/EVAL.md`](EVAL.md)). Anything else — strings, bignums, records, ports — is out of scope for now and reserved in the tag space.
 
 **Concurrency**: single-threaded. No locks, no atomics.
 
@@ -24,7 +24,7 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 | `011` | 0x3  | `MTAG_SYMBOL`     | heap base \| 3; 16-byte object (header + name ptr)     |
 | `100` | 0x4  | (reserved)        | unused; future string                                  |
 | `101` | 0x5  | `MTAG_CLOSURE`    | heap base \| 5; 32-byte object (4 mobj slots, no header) |
-| `110` | 0x6  | `MTAG_IMMEDIATE`  | constants: `#f=0x06`, `#t=0x0E`, `()=0x26`, `void=0x2E`, `eof=0x36` |
+| `110` | 0x6  | `MTAG_IMMEDIATE`  | constants: `#f=0x06`, `#t=0x0E`, `()=0x26`, `void=0x2E`, `eof=0x36`; chars carry a low-byte tag of `0x16` with the codepoint in the upper bits |
 | `111` | 0x7  | `MTAG_TYPED_OBJ`  | heap base \| 7; first heap word is a secondary tag     |
 
 ### Why this layout
@@ -33,7 +33,7 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 - **Pair tag = 1** because pairs are by far the most common heap object in Scheme; a 1-bit tag is the smallest cost per `cons`.
 - **Flonum, symbol given dedicated tags** so common predicates (`flonum?`, `symbol?`) are a one-instruction tag check, not a two-step "tag 7 then secondary".
 - **Tag 7 (typed object) is the catch-all** — anything that doesn't justify a primary tag goes here, and the secondary type lives in the first word of the heap object. Vectors are the only inhabitant in v1.
-- **Tag 6 (immediate) collects all the heap-less constants** — `#t`, `#f`, `'()`, `eof`, and (later) characters, void. They are full-word constants whose bits never collide with a heap pointer.
+- **Tag 6 (immediate) collects all the heap-less constants** — `#t`, `#f`, `'()`, `eof`, `void`, and characters. They are full-word constants whose bits never collide with a heap pointer. Characters use a low-byte tag (`0x16`) instead of just bits 3-7 so the upper 24+ bits stay clean for the Unicode codepoint.
 - **16-byte alignment** gives us a fourth low bit that we deliberately don't use for tagging — it stays zero on every heap pointer, which lets us spot-check pointer validity in debug builds.
 
 ### Immediate values
@@ -45,11 +45,19 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 #define Mnull   (Mimmediate(0x4))   // 0x26
 #define Mvoid   (Mimmediate(0x5))   // 0x2E   (unspecified-value sentinel)
 #define Meof    (Mimmediate(0x6))   // 0x36
+
+/* Characters: low byte 0x16, codepoint in upper bits. Encoding
+ * follows Chez Scheme's `type_char`. */
+#define MCHAR_TAG       ((mobj)0x16)
+#define Mchar(c)        ((mobj)(((uintptr_t)(c) << 8) | MCHAR_TAG))
+#define Mchar_val(v)    ((mchar)((uintptr_t)(v) >> 8))
+#define Mcharp(v)       (((uintptr_t)(v) & 0xFF) == MCHAR_TAG)
 ```
 
 Predicate tricks worth keeping:
 - `(x & 0xF7) == 0x06` matches both `#t` and `#f` ⇒ one-instruction `boolean?` (the mask clears bit 3, the only bit that distinguishes them; `()` and `eof` set higher bits and so don't collide).
 - `x == Mnull`, `x == Meof` are exact equality — each has a unique bit pattern.
+- `(x & 0xFF) == 0x16` ⇒ one-instruction `char?`. The 8-bit tag boundary leaves bits 8-63 clean for the codepoint, so `Mchar_val` is just one shift with no mask. See `docs/agents/chars.md` for the full design.
 
 ### Forward marker
 

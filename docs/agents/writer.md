@@ -4,10 +4,13 @@ Tracker for the s-expression printer. Source of truth for the legacy
 implementation: `old_writer.c` at the project root. The new writer lives
 in `src/write.c` with its public API in `include/minim.h`.
 
-The runtime in v1 supports six concrete types — fixnum, pair, flonum,
-symbol, vector — plus four immediates (`#t`, `#f`, `'()`, `eof`). Writer
-features that depend on types we haven't built yet (characters, strings,
-procedures, ports, modules) are intentionally deferred.
+The runtime supports six concrete types — fixnum, pair, flonum,
+symbol, vector, character — plus five immediates (`#t`, `#f`, `'()`,
+`eof`, `void`). Closures, primitives, and continuations are also
+present (handled with `#<procedure>` / `#<continuation>` placeholders
+since they have no source-level syntax). Writer features that depend
+on types we haven't built yet (strings, ports, modules) are
+intentionally deferred.
 
 ## Phase 1 — output sink
 - [x] `Mwrite(mobj, FILE *)` writes one datum to a stream
@@ -35,9 +38,12 @@ procedures, ports, modules) are intentionally deferred.
 These cannot be implemented until the corresponding runtime type lands.
 The legacy `old_writer.c` already has the syntax for each.
 
-- [ ] Characters `#\<name>`/`#\<single>` — needs the char type. Named
-      chars: `alarm`, `backspace`, `tab`, `newline`, `vtab`, `page`,
-      `return`, `esc`, `space`, `delete`, `nul`.
+- [x] Characters — landed via `docs/agents/chars.md`. Writer
+      emits the R7RS canonical name for `0x00`/`0x07`/`0x08`/`0x09`
+      /`0x0A`/`0x0D`/`0x1B`/`0x20`/`0x7F` (`null`, `alarm`,
+      `backspace`, `tab`, `newline`, `return`, `escape`, `space`,
+      `delete`), printable ASCII (`0x21`–`0x7E` excluding the named
+      ones) as `#\<single>`, otherwise `#\x%X` uppercase unpadded.
 - [ ] Strings `"..."` with escapes (`\n`, `\t`, `\\`, `\"`, etc.).
 - [x] Procedures: `#<procedure>` for anonymous closures, plus
       `#<procedure:name>` for closures whose name slot is bound and
@@ -87,8 +93,10 @@ The legacy `old_writer.c` already has the syntax for each.
 - [ ] Configurable output radix for fixnums (`#x`, `#b`, `#o`).
 
 ## Out of scope for now
-- `(display ...)` distinct from `(write ...)` — collapse to a single
-  function until strings/chars land.
+- `(display ...)` distinct from `(write ...)` — only meaningful
+  divergence is for strings (which don't exist yet); chars already
+  round-trip cleanly. Collapse to a single function until strings
+  land.
 - Bytevectors `#u8(...)`.
 - Source-location tracking on output.
 - Custom user-defined writer hooks.

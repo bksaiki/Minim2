@@ -311,6 +311,90 @@ static mobj read_vector(mreader *r) {
  * #-prefixed syntax
  * -------------------------------------------------------------------- */
 
+/* Look up a R7RS character name. Returns true and writes the
+ * codepoint into *out on a hit; false otherwise. */
+static bool char_name_lookup(const char *name, mchar *out) {
+    static const struct { const char *name; mchar code; } table[] = {
+        { "alarm",     0x07 },
+        { "backspace", 0x08 },
+        { "delete",    0x7F },
+        { "escape",    0x1B },
+        { "newline",   0x0A },
+        { "null",      0x00 },
+        { "return",    0x0D },
+        { "space",     0x20 },
+        { "tab",       0x09 },
+    };
+    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+        if (strcmp(name, table[i].name) == 0) {
+            *out = table[i].code;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Parse #\<spec> after the leading `#\` has been consumed. The
+ * spec is one of:
+ *   - a single character (any character, including delimiters)
+ *   - an R7RS character name (alarm/newline/...)
+ *   - `xHHHH` for a Unicode hex literal
+ *
+ * Disambiguation: only continue reading after the first char if
+ * that first char is alphabetic — `#\(` is the literal paren, and
+ * `#\1` is the digit `1`, neither tries to extend into a name. A
+ * delimiter must follow the spec. */
+static mobj read_char(mreader *r) {
+    int first = reader_get(r);
+    if (first == EOF) parse_error("unexpected EOF after #\\");
+
+    char buf[64];
+    size_t n = 0;
+    buf[n++] = (char)first;
+
+    if (isalpha((unsigned char)first)) {
+        while (is_symbol_char(reader_peek(r))) {
+            if (n + 1 >= sizeof(buf)) parse_error("character name too long");
+            buf[n++] = (char)reader_get(r);
+        }
+    }
+    buf[n] = '\0';
+
+    if (!is_delimiter(reader_peek(r)))
+        parse_error_c("expected delimiter after character", reader_peek(r));
+
+    /* One char: that's the value. */
+    if (n == 1) return Mchar((mchar)(unsigned char)first);
+
+    /* `xHHHH` — hex literal, but only if every char after `x` is a
+     * hex digit. Otherwise fall through to the name table (so e.g.
+     * `xy` doesn't get half-parsed as hex). */
+    if (buf[0] == 'x') {
+        bool all_hex = true;
+        for (size_t i = 1; i < n; i++) {
+            if (hex_digit_val((unsigned char)buf[i]) < 0) {
+                all_hex = false;
+                break;
+            }
+        }
+        if (all_hex) {
+            uintptr_t code = 0;
+            for (size_t i = 1; i < n; i++) {
+                code = (code << 4) | (uintptr_t)hex_digit_val((unsigned char)buf[i]);
+                if (code > 0x10FFFF)
+                    parse_error("character hex literal exceeds Unicode max (0x10FFFF)");
+            }
+            return Mchar((mchar)code);
+        }
+    }
+
+    mchar named;
+    if (char_name_lookup(buf, &named)) return Mchar(named);
+
+    Merror("parse error: unknown character name: %s", buf);
+    return Meof; /* unreachable */
+}
+
 static mobj read_hash(mreader *r) {
     int c = reader_get(r);
     switch (c) {
@@ -322,6 +406,8 @@ static mobj read_hash(mreader *r) {
         if (!is_delimiter(reader_peek(r)))
             parse_error_c("expected delimiter after #f", reader_peek(r));
         return Mfalse;
+    case '\\':
+        return read_char(r);
     case '(':
         return read_vector(r);
     case 'x':

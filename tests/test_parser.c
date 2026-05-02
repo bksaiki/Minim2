@@ -1,6 +1,7 @@
 #include "minim.h"
 #include "harness.h"
 
+#include <setjmp.h>
 #include <string.h>
 
 /* ----------------------------------------------------------------------
@@ -259,6 +260,130 @@ static void test_parser_allocates_safely(void) {
     Mshutdown();
 }
 
+/* ----------------------------------------------------------------------
+ * Characters (chars.md Phase 2)
+ * -------------------------------------------------------------------- */
+
+static void test_char_named(void) {
+    Minit();
+    struct { const char *src; mchar code; const char *label; } cases[] = {
+        { "#\\alarm",     0x07, "char: alarm" },
+        { "#\\backspace", 0x08, "char: backspace" },
+        { "#\\delete",    0x7F, "char: delete" },
+        { "#\\escape",    0x1B, "char: escape" },
+        { "#\\newline",   0x0A, "char: newline" },
+        { "#\\null",      0x00, "char: null" },
+        { "#\\return",    0x0D, "char: return" },
+        { "#\\space",     0x20, "char: space" },
+        { "#\\tab",       0x09, "char: tab" },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        mobj v = read_one(cases[i].src);
+        CHECK(Mcharp(v), cases[i].label);
+        CHECK(Mchar_val(v) == cases[i].code, cases[i].label);
+    }
+    Mshutdown();
+}
+
+static void test_char_single(void) {
+    Minit();
+    /* Single chars span ASCII printables, including ones that
+     * could be confused with prefixes of names (`a`, `n`, `s`, `t`)
+     * and including delimiter-shaped chars like `(`/`)` that the
+     * reader must accept as the literal character. */
+    struct { const char *src; mchar code; const char *label; } cases[] = {
+        { "#\\A", 'A', "char: 'A'" },
+        { "#\\a", 'a', "char: 'a' (not 'alarm')" },
+        { "#\\n", 'n', "char: 'n' (not 'newline')" },
+        { "#\\s", 's', "char: 's' (not 'space')" },
+        { "#\\t", 't', "char: 't' (not 'tab')" },
+        { "#\\0", '0', "char: '0'" },
+        { "#\\9", '9', "char: '9'" },
+        { "#\\(", '(', "char: '('" },
+        { "#\\)", ')', "char: ')'" },
+        { "#\\+", '+', "char: '+'" },
+        { "#\\-", '-', "char: '-'" },
+        { "#\\.", '.', "char: '.'" },
+        { "#\\!", '!', "char: '!'" },
+        { "#\\?", '?', "char: '?'" },
+        { "#\\x", 'x', "char: 'x' (not hex prefix)" },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        mobj v = read_one(cases[i].src);
+        CHECK(Mcharp(v), cases[i].label);
+        CHECK(Mchar_val(v) == cases[i].code, cases[i].label);
+    }
+    Mshutdown();
+}
+
+static void test_char_hex(void) {
+    Minit();
+    struct { const char *src; mchar code; const char *label; } cases[] = {
+        { "#\\x0",        0x00,    "hex: x0" },
+        { "#\\x7",        0x07,    "hex: x7 (alarm)" },
+        { "#\\x41",       0x41,    "hex: x41 ('A')" },
+        { "#\\xff",       0xff,    "hex: xff (lowercase)" },
+        { "#\\xFF",       0xff,    "hex: xFF (uppercase)" },
+        { "#\\xFFFF",     0xffff,  "hex: xFFFF (BMP boundary)" },
+        { "#\\x10000",    0x10000, "hex: x10000 (first SMP)" },
+        { "#\\x1F600",    0x1F600, "hex: x1F600 (emoji)" },
+        { "#\\x10FFFF",   0x10FFFF,"hex: x10FFFF (Unicode max)" },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        mobj v = read_one(cases[i].src);
+        CHECK(Mcharp(v), cases[i].label);
+        CHECK(Mchar_val(v) == cases[i].code, cases[i].label);
+    }
+    Mshutdown();
+}
+
+/* Recoverable-error helper, same pattern as the eval-side tests. */
+static int parse_caught_error(const char *src) {
+    jmp_buf jmp;
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    int errored = 0;
+    if (setjmp(jmp) == 0) {
+        (void)read_one(src);
+    } else {
+        errored = 1;
+    }
+    minim_error_jmp = NULL;
+    return errored;
+}
+
+static void test_char_errors(void) {
+    Minit();
+    /* `xZZ` is neither a hex literal (Z isn't a hex digit) nor a
+     * known name, so it should error. */
+    CHECK(parse_caught_error("#\\xZZ"),
+          "char error: xZZ (not hex, not name)");
+
+    /* Names that aren't in the R7RS-canonical set must error. */
+    CHECK(parse_caught_error("#\\bogus"),
+          "char error: unknown name 'bogus'");
+    CHECK(parse_caught_error("#\\esc"),
+          "char error: 'esc' is not R7RS (escape is)");
+    CHECK(parse_caught_error("#\\nul"),
+          "char error: 'nul' is not R7RS (null is)");
+    CHECK(parse_caught_error("#\\linefeed"),
+          "char error: 'linefeed' is not R7RS (newline is)");
+
+    /* Hex overflow past 0x10FFFF. */
+    CHECK(parse_caught_error("#\\x110000"),
+          "char error: hex past Unicode max");
+
+    /* `#\` with EOF directly. */
+    CHECK(parse_caught_error("#\\"),
+          "char error: EOF after #\\");
+
+    /* Missing delimiter — `#\(a` with the `a` not being a delimiter
+     * after the `(` literal. */
+    CHECK(parse_caught_error("#\\(a"),
+          "char error: missing delimiter after literal");
+    Mshutdown();
+}
+
 int main(void) {
     test_immediates();
     test_fixnums();
@@ -272,6 +397,10 @@ int main(void) {
     test_comments();
     test_multiple_datums();
     test_parser_allocates_safely();
+    test_char_named();
+    test_char_single();
+    test_char_hex();
+    test_char_errors();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

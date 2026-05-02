@@ -4,10 +4,10 @@ Tracker for the s-expression reader. Source of truth for the legacy
 implementation: `old_parser.c` at the project root. The new parser lives
 in `src/read.c` with its public API in `include/minim.h`.
 
-The runtime in v1 supports six concrete types — fixnum, pair, flonum,
-symbol, vector — plus four immediates (`#t`, `#f`, `'()`, `eof`). Reader
-features that depend on types we haven't built yet (characters, strings,
-boxes) are intentionally deferred and listed below.
+The runtime supports six concrete types — fixnum, pair, flonum,
+symbol, vector, character — plus five immediates (`#t`, `#f`, `'()`,
+`eof`, `void`). Reader features that depend on types we haven't built
+yet (strings, boxes) are intentionally deferred and listed below.
 
 ## Phase 1 — input source abstraction
 - [x] `mreader` struct that wraps either a C string or a `FILE *`
@@ -38,10 +38,13 @@ These cannot be implemented until the corresponding runtime type lands.
 The legacy `old_parser.c` already has the syntax handling and can be
 ported once the type exists.
 
-- [ ] Characters `#\<name>` and `#\<single>` — needs a `mchar` value
-      type (R7RS named chars: `alarm`, `backspace`, `delete`, `esc`,
-      `linefeed`, `newline`, `nul`, `page`, `return`, `space`, `tab`,
-      `vtab`).
+- [x] Characters `#\<name>` / `#\<single>` / `#\xHH...` — landed
+      via `docs/agents/chars.md`. R7RS named chars only: `alarm`,
+      `backspace`, `delete`, `escape`, `newline`, `null`, `return`,
+      `space`, `tab`. Hex form accepts up to `0x10FFFF`. Disambig:
+      first non-alphabetic char or first-only-then-delimiter is a
+      single-char form; otherwise read until delimiter and match
+      hex (`x[0-9a-fA-F]+`) or named.
 - [ ] Strings `"..."` with `\n`/`\t`/`\\`/`\'`/`\"` escapes — needs a
       mutable string type.
 - [ ] Boxes `#&datum` — needs a box type. (Commented out in legacy.)

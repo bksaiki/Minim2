@@ -65,6 +65,40 @@ static void write_flonum(mobj v, FILE *out) {
 }
 
 /* ----------------------------------------------------------------------
+ * Character
+ *
+ * Writer is canonical: 9 R7RS named chars get their `#\<name>`
+ * spelling, printable ASCII gets `#\<single>`, everything else
+ * goes out as `#\x<hex>` with no leading zeros. The reader accepts
+ * the same set; round-trips are stable.
+ * -------------------------------------------------------------------- */
+
+static void write_char(mobj v, FILE *out) {
+    mchar c = Mchar_val(v);
+    switch (c) {
+    case 0x00: fputs("#\\null",      out); return;
+    case 0x07: fputs("#\\alarm",     out); return;
+    case 0x08: fputs("#\\backspace", out); return;
+    case 0x09: fputs("#\\tab",       out); return;
+    case 0x0A: fputs("#\\newline",   out); return;
+    case 0x0D: fputs("#\\return",    out); return;
+    case 0x1B: fputs("#\\escape",    out); return;
+    case 0x20: fputs("#\\space",     out); return;
+    case 0x7F: fputs("#\\delete",    out); return;
+    }
+    if (c >= 0x21 && c <= 0x7E) {
+        /* Printable ASCII (excluding space, which is named above). */
+        fputc('#', out);
+        fputc('\\', out);
+        fputc((int)c, out);
+        return;
+    }
+    /* Hex form, unpadded. The reader accepts variable-length hex
+     * digits; matching that here keeps `#\xC` etc. minimal. */
+    fprintf(out, "#\\x%X", (unsigned int)c);
+}
+
+/* ----------------------------------------------------------------------
  * Procedures
  *
  * Closures, primitives, and continuations all print as
@@ -112,6 +146,10 @@ void Mwrite(mobj v, FILE *out) {
         write_named_procedure(Mclosure_name(v), out);
         return;
     case MTAG_IMMEDIATE:
+        /* Chars are immediates whose low byte is MCHAR_TAG; check
+         * before the constant-equality switch so character values
+         * reach the right writer. */
+        if (Mcharp(v)) { write_char(v, out); return; }
         switch (v) {
         case Mfalse: fputs("#f", out);      return;
         case Mtrue:  fputs("#t", out);      return;

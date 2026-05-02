@@ -31,6 +31,12 @@ continuation frame, primitive procedure, captured continuation. Each
 gets a new `MSEC_*` secondary tag under the existing `MTAG_TYPED_OBJ`
 primary tag.
 
+**Value types supported in v1** (for reference, since they appear in
+self-evaluating positions and as primitive arguments): fixnum, pair,
+flonum, symbol, vector, character, plus the immediates `#t`, `#f`,
+`'()`, `eof`, `void`. Characters are the most recent addition; see
+[`docs/agents/chars.md`](agents/chars.md).
+
 **Out of scope for v1**, called out so future work doesn't redesign
 the same surface:
 
@@ -43,7 +49,8 @@ the same surface:
   not implemented.
 - Tail-call detection at parse time. We don't need it — the kont
   placement rules give us TCO automatically.
-- Bignums, rationals, complex numbers; characters; strings.
+- Bignums, rationals, complex numbers; strings. (Characters now
+  exist — see `docs/agents/chars.md`.)
 
 ## Pointer tagging additions
 
