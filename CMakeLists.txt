@@ -7,8 +7,13 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 option(MINIM_GC_STRESS "Trigger a full GC on every allocation (debug)" OFF)
 
-set(MINIM_RUNTIME_SOURCES
+# Runtime sources, packaged as a static library so each consumer
+# (the `minim` binary plus every test target) links against one
+# already-compiled archive instead of recompiling the runtime per
+# target.
+add_library(minim_rt STATIC
     src/alloc.c
+    src/eval.c
     src/gc.c
     src/read.c
     src/symbol.c
@@ -16,16 +21,22 @@ set(MINIM_RUNTIME_SOURCES
     src/write.c
 )
 
-add_executable(minim
-    src/main.c
-    ${MINIM_RUNTIME_SOURCES}
-)
-
-target_include_directories(minim PRIVATE include)
+# `include/` is part of the runtime's public-ish interface — anything
+# linking minim_rt needs the headers, so propagate via PUBLIC.
+target_include_directories(minim_rt PUBLIC include)
 
 if(MINIM_GC_STRESS)
-    target_compile_definitions(minim PRIVATE MINIM_GC_STRESS=1)
+    # Stress mode is a runtime-affecting compile-time flag. Make it
+    # PUBLIC so dependents inherit it consistently — otherwise the
+    # static archive could be built without stress while a test
+    # consumer is built with it (or vice versa) and assumptions in
+    # inline header code would diverge.
+    target_compile_definitions(minim_rt PUBLIC MINIM_GC_STRESS=1)
 endif()
+
+# REPL binary.
+add_executable(minim src/main.c)
+target_link_libraries(minim PRIVATE minim_rt)
 
 enable_testing()
 add_subdirectory(tests)

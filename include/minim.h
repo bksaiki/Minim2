@@ -1,6 +1,7 @@
 #ifndef MINIM_H
 #define MINIM_H
 
+#include <setjmp.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -37,15 +38,44 @@ typedef unsigned char mbyte;
 #define MTAG_PAIR       ((mobj)0x1)
 #define MTAG_FLONUM     ((mobj)0x2)
 #define MTAG_SYMBOL     ((mobj)0x3)
-/* 0x4 and 0x5 reserved for future use (closures, strings) */
+/* 0x4 reserved for future use (e.g. strings) */
+#define MTAG_CLOSURE    ((mobj)0x5)
 #define MTAG_IMMEDIATE  ((mobj)0x6)
 #define MTAG_TYPED_OBJ  ((mobj)0x7)
 
 #define MTAG_MASK       ((mobj)0x7)
 
-/* Secondary tags for typed objects (low 4 bits of the type word) */
+/* Secondary tags for typed objects (low 4 bits of the type word).
+ *
+ * Every typed object shares the same on-heap shape: a header word
+ *   (slot_count << 4) | secondary_tag
+ * followed by `slot_count` payload slots, each one machine word wide
+ * (mobj or a fixnum-shifted raw word). The GC traces every payload
+ * slot uniformly; only the secondary tag's *interpretation* differs
+ * between kinds. See docs/EVAL.md for the per-kind slot layout.
+ *
+ * Closures get their own primary tag (MTAG_CLOSURE) rather than a
+ * secondary tag here — calling a procedure is the hottest path in a
+ * Scheme runtime, so the predicate cost should be one instruction. */
 #define MSEC_VECTOR     ((mobj)0x0)
+#define MSEC_KONT       ((mobj)0x1)  /* continuation frame */
+#define MSEC_ENV        ((mobj)0x2)  /* lexical environment frame */
+#define MSEC_PRIM       ((mobj)0x3)  /* built-in procedure */
 #define MSEC_MASK       ((mobj)0xF)
+
+/* Continuation frame kinds, stored as a fixnum in slot 0 of an
+ * MSEC_KONT typed object. The constants are pre-shifted (Mfixnum(N))
+ * so they read as MTAG_FIXNUM (a leaf) to the GC. See docs/EVAL.md
+ * for the per-kind extra slots. KONT_EXC is reserved for the future
+ * exception-handler frame and is not pushed in v1. */
+#define KONT_HALT       ((mobj)(0 << 3))
+#define KONT_IF         ((mobj)(1 << 3))
+#define KONT_SEQ        ((mobj)(2 << 3))
+#define KONT_APP        ((mobj)(3 << 3))
+#define KONT_SET        ((mobj)(4 << 3))
+#define KONT_DEFINE     ((mobj)(5 << 3))
+#define KONT_EXC        ((mobj)(6 << 3))
+#define KONT_LET        ((mobj)(7 << 3))
 
 /* Forwarding marker written into the first word of a copied object during GC */
 #define MFORWARD_MARKER ((mobj)0x3E)
@@ -54,10 +84,13 @@ typedef unsigned char mbyte;
  * Immediate values
  * -------------------------------------------------------------------- */
 
-#define Mtrue      ((mobj)0x0E)
-#define Mfalse     ((mobj)0x06)
-#define Mnull      ((mobj)0x26)
-#define Meof       ((mobj)0x36)
+#define Mimmediate(v)  ((mobj) ((v << 3) | MTAG_IMMEDIATE))
+
+#define Mfalse    (Mimmediate(0x0)) // 0x06
+#define Mtrue     (Mimmediate(0x1)) // 0x0E
+#define Mnull     (Mimmediate(0x4)) // 0x26
+#define Mvoid     (Mimmediate(0x5)) // 0x2E
+#define Meof      (Mimmediate(0x6)) // 0x36
 
 /* ----------------------------------------------------------------------
  * Predicates
@@ -75,6 +108,9 @@ static inline bool Mfalsep(mobj v) {
 static inline bool Meofp(mobj v)   {
     return v == Meof;
 }
+static inline bool Mvoidp(mobj v)  {
+    return v == Mvoid;
+}
 static inline bool Mbooleanp(mobj v) {
     return (v & 0xF7) == 0x06; // matches both #t and #f
 }
@@ -90,13 +126,28 @@ static inline bool Mflonump(mobj v) {
 static inline bool Msymbolp(mobj v) {
     return (v & MTAG_MASK) == MTAG_SYMBOL;
 }
-static inline bool Mvectorp(mobj v) {
-    if ((v & MTAG_MASK) != MTAG_TYPED_OBJ) {
-        return false;
-    }
+static inline bool Mclosurep(mobj v) {
+    return (v & MTAG_MASK) == MTAG_CLOSURE;
+}
+static inline bool Mimmediatep(mobj v) {
+    return (v & MTAG_MASK) == MTAG_IMMEDIATE;
+}
 
+static inline bool _Mhas_secondary(mobj v, mobj sec) {
+    if ((v & MTAG_MASK) != MTAG_TYPED_OBJ) return false;
     mobj header = *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ));
-    return (header & MSEC_MASK) == MSEC_VECTOR;
+    return (header & MSEC_MASK) == sec;
+}
+
+static inline bool Mvectorp(mobj v)  { return _Mhas_secondary(v, MSEC_VECTOR); }
+static inline bool Menvp(mobj v)     { return _Mhas_secondary(v, MSEC_ENV); }
+static inline bool Mkontp(mobj v)    { return _Mhas_secondary(v, MSEC_KONT); }
+static inline bool Mprimp(mobj v)    { return _Mhas_secondary(v, MSEC_PRIM); }
+static inline bool Mprocedurep(mobj v) {
+    /* Konts are first-class procedures: invoking one is what
+     * `call/cc` hands back to the user — restore the saved chain
+     * and continue with the supplied value. */
+    return Mclosurep(v) || Mprimp(v) || Mkontp(v);
 }
 
 /* ----------------------------------------------------------------------
@@ -125,6 +176,40 @@ static inline mobj Mvector_ref(mobj v, size_t i) {
     return *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i);
 }
 
+/* Generic typed-object slot count and slot access. Works for every
+ * typed-object kind (vector, kont, env, prim) because
+ * they all share the `(slot_count << 4) | sec` header layout. */
+static inline size_t Mtyped_obj_slots(mobj v) {
+    return (size_t)(*((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ)) >> 4);
+}
+static inline mobj Mtyped_obj_ref(mobj v, size_t i) {
+    return *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i);
+}
+
+/* Closure: own primary tag, four fixed slots, no header word. */
+static inline mobj *Mclosure_slots(mobj v) {
+    return (mobj *)((uintptr_t)v - MTAG_CLOSURE);
+}
+static inline mobj Mclosure_params(mobj v) { return Mclosure_slots(v)[0]; }
+static inline mobj Mclosure_body(mobj v)   { return Mclosure_slots(v)[1]; }
+static inline mobj Mclosure_env(mobj v)    { return Mclosure_slots(v)[2]; }
+static inline mobj Mclosure_name(mobj v)   { return Mclosure_slots(v)[3]; }
+
+/* Per-kind accessors for the remaining typed-object kinds. Each just
+ * wraps Mtyped_obj_ref with a name that documents the slot's role;
+ * see docs/EVAL.md for layouts. */
+
+static inline mobj Menv_rib(mobj v)        { return Mtyped_obj_ref(v, 0); }
+static inline mobj Menv_parent(mobj v)     { return Mtyped_obj_ref(v, 1); }
+
+static inline mobj Mkont_kind(mobj v)      { return Mtyped_obj_ref(v, 0); }
+static inline mobj Mkont_parent(mobj v)    { return Mtyped_obj_ref(v, 1); }
+static inline mobj Mkont_env(mobj v)       { return Mtyped_obj_ref(v, 2); }
+
+static inline mobj Mprim_name(mobj v)      { return Mtyped_obj_ref(v, 0); }
+static inline mobj Mprim_arity_min(mobj v) { return Mtyped_obj_ref(v, 1); }
+static inline mobj Mprim_arity_max(mobj v) { return Mtyped_obj_ref(v, 2); }
+
 /* ----------------------------------------------------------------------
  * Mutators
  * -------------------------------------------------------------------- */
@@ -138,6 +223,13 @@ static inline void Mset_cdr(mobj p, mobj v) {
 static inline void Mvector_set(mobj v, size_t i, mobj x) {
     *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i) = x;
 }
+static inline void Mtyped_obj_set(mobj v, size_t i, mobj x) {
+    *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i) = x;
+}
+static inline void Mclosure_set_params(mobj v, mobj x) { Mclosure_slots(v)[0] = x; }
+static inline void Mclosure_set_body(mobj v, mobj x)   { Mclosure_slots(v)[1] = x; }
+static inline void Mclosure_set_env(mobj v, mobj x)    { Mclosure_slots(v)[2] = x; }
+static inline void Mclosure_set_name(mobj v, mobj x)   { Mclosure_slots(v)[3] = x; }
 static inline const char *Msymbol_name(mobj v) {
     return *(const char **)((uintptr_t)v - MTAG_SYMBOL + 8);
 }
@@ -158,12 +250,71 @@ mobj Mvector(size_t length, mobj fill);
 mobj Mflonum(double d);
 mobj Mintern(const char *name);
 
+/* Evaluator object constructors. See docs/EVAL.md. */
+mobj Mclosure(mobj params, mobj body, mobj env, mobj name);
+mobj Menv_extend(mobj rib, mobj parent);
+
+/* Mkont allocates a frame with `extra_slots` slots beyond the
+ * standard (kind, parent, env). The caller fills slots 3..3+extra-1
+ * via Mtyped_obj_set (or via a per-kind constructor below). */
+mobj Mkont(mobj kind, mobj parent, mobj env, size_t extra_slots);
+mobj Mkont_if(mobj parent, mobj env, mobj then_expr, mobj else_expr);
+mobj Mkont_seq(mobj parent, mobj env, mobj rest);
+mobj Mkont_app(mobj parent, mobj env, mobj unev, mobj evald);
+mobj Mkont_set(mobj parent, mobj env, mobj name);
+mobj Mkont_define(mobj parent, mobj env, mobj name);
+mobj Mkont_let(mobj parent, mobj env, mobj pending, mobj evald, mobj body);
+
+/* Function pointer for a primitive procedure. Receives the
+ * already-evaluated argument list as a Scheme list and returns one
+ * mobj. The eval loop is in APPLY mode after this returns. */
+typedef mobj (*Mprim_fn)(mobj args);
+mobj Mprim(const char *name, Mprim_fn fn, intptr_t arity_min, intptr_t arity_max);
+Mprim_fn Mprim_fn_of(mobj v);
+
+/* ----------------------------------------------------------------------
+ * Evaluator
+ *
+ * Meval consumes one expression (already a parsed mobj — typically the
+ * result of Mread) and returns its value. Evaluation runs as a state
+ * machine on top of the spaghetti-stack continuation chain; see
+ * docs/EVAL.md.
+ * -------------------------------------------------------------------- */
+
+mobj Meval(mobj expr);
+
 /* ----------------------------------------------------------------------
  * System
  * -------------------------------------------------------------------- */
 
 void Minit(void);
 void Mshutdown(void);
+
+/* ----------------------------------------------------------------------
+ * Recoverable runtime errors
+ *
+ * Merror is the runtime's "raise" — it prints `minim: <msg>\n` to
+ * stderr, then either longjmps to an installed handler or aborts.
+ *
+ * To install a handler (e.g. for a REPL that wants to survive parse
+ * and eval errors): set `minim_error_jmp` to point at a jmp_buf that
+ * has been populated by setjmp, and set `minim_error_jmp_ssp` to the
+ * shadow-stack depth you want restored on longjmp. Merror restores
+ * `minim_ssp` to that depth before jumping, so any in-flight
+ * MINIM_GC_PROTECT frames inside the longjmped-over code are unwound.
+ *
+ * No handler installed (`minim_error_jmp == NULL`) ⇒ Merror aborts,
+ * preserving the previous behavior for tests and non-interactive use.
+ *
+ * Phase 9 of the eval plan replaces this with proper Scheme exception
+ * handling; until then, every "this would have been a Scheme exception"
+ * site calls Merror.
+ * -------------------------------------------------------------------- */
+
+extern jmp_buf *minim_error_jmp;
+extern size_t   minim_error_jmp_ssp;
+
+void Merror(const char *fmt, ...);
 
 /* ----------------------------------------------------------------------
  * Reader / writer
@@ -205,7 +356,13 @@ void Mwrite(mobj v, FILE *out);
  * Interned symbols
  * -------------------------------------------------------------------- */
 
+extern mobj begin_sym;
+extern mobj define_sym;
+extern mobj if_sym;
+extern mobj lambda_sym;
+extern mobj let_sym;
 extern mobj quote_sym;
+extern mobj set_sym;
 
 /* ----------------------------------------------------------------------
  * Roots: shadow stack + globals

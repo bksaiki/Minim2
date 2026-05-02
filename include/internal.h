@@ -9,4 +9,19 @@ void symbol_init(void);
  * gc_shutdown so we can still read symbol name pointers. */
 void symbol_shutdown(void);
 
+/* Defined in eval.c. Registers a C primitive function in the
+ * out-of-GC-heap function table and returns its index. The index is
+ * stored as a fixnum in the prim object's slot 3. */
+size_t prim_fn_register(Mprim_fn fn);
+
+/* Defined in eval.c. Registers the eval-loop state slots as global GC roots,
+ * and seeds them. */
+void eval_init(void);
+
+/* Defined in eval.c. Resets the primitive-function table index, the
+ * eval-loop state slots, and the special-form symbol caches so a new
+ * Minit/Mshutdown cycle starts cleanly. The malloc'd prim table
+ * buffer is reused across cycles. */
+void eval_shutdown(void);
+
 #endif /* MINIM_INTERNAL_H_ */

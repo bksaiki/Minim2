@@ -191,6 +191,49 @@ static void test_roundtrip(void) {
     Mshutdown();
 }
 
+/* ----------------------------------------------------------------------
+ * Procedures: closures (anonymous + named), primitives, continuations
+ * -------------------------------------------------------------------- */
+
+static mobj prim_dummy(mobj args) { (void)args; return Mfalse; }
+
+static void test_procedures(void) {
+    Minit();
+    MINIM_GC_FRAME_BEGIN;
+    mobj clo = Mnull, named = Mnull, prim = Mnull, halt = Mnull;
+    mobj body = Mnull, name = Mnull;
+    MINIM_GC_PROTECT(clo);
+    MINIM_GC_PROTECT(named);
+    MINIM_GC_PROTECT(prim);
+    MINIM_GC_PROTECT(halt);
+    MINIM_GC_PROTECT(body);
+    MINIM_GC_PROTECT(name);
+
+    /* Anonymous closure (no name set). The body pair must live in a
+     * protected slot so the next allocation (the closure itself)
+     * can't strand it. */
+    body = Mcons(Mfixnum(1), Mnull);
+    clo = Mclosure(Mnull, body, Mnull, Mfalse);
+    CHECK_WRITE(clo, "#<procedure>", "write: anonymous closure");
+
+    /* Named closure prints its name. */
+    body = Mcons(Mfixnum(1), Mnull);
+    name = Mintern("inc");
+    named = Mclosure(Mnull, body, Mnull, name);
+    CHECK_WRITE(named, "#<procedure:inc>", "write: named closure");
+
+    /* Primitive — its name comes from the constructor. */
+    prim = Mprim("zap", prim_dummy, 0, 0);
+    CHECK_WRITE(prim, "#<procedure:zap>", "write: primitive");
+
+    /* Continuation prints generically. */
+    halt = Mkont(KONT_HALT, Mnull, Mnull, 0);
+    CHECK_WRITE(halt, "#<continuation>", "write: continuation");
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
 int main(void) {
     test_immediates();
     test_fixnums();
@@ -199,6 +242,7 @@ int main(void) {
     test_lists();
     test_vectors();
     test_roundtrip();
+    test_procedures();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

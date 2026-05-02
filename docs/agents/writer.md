@@ -39,10 +39,11 @@ The legacy `old_writer.c` already has the syntax for each.
       chars: `alarm`, `backspace`, `tab`, `newline`, `vtab`, `page`,
       `return`, `esc`, `space`, `delete`, `nul`.
 - [ ] Strings `"..."` with escapes (`\n`, `\t`, `\\`, `\"`, etc.).
-- [ ] Procedures: `#<procedure>` / `#<procedure:name>` — needs closures
-      and primops.
+- [x] Procedures: `#<procedure>` for anonymous closures, plus
+      `#<procedure:name>` for closures whose name slot is bound and
+      for primitives (which always carry their name). Continuations
+      print as `#<continuation>` for now.
 - [ ] Ports: `#<input-port>`, `#<output-port>`.
-- [ ] Continuations: `#<procedure>` (in old writer).
 - [ ] Modules: `#<module:path subpath>`.
 - [ ] Multiple-values marker `#<mvvalues>` and `#<void>` / `#<unbound>`
       sentinels.

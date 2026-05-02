@@ -98,17 +98,16 @@ static size_t object_size(mobj v) {
     case MTAG_PAIR: return MINIM_PAIR_SIZE;
     case MTAG_FLONUM: return MINIM_FLONUM_SIZE;
     case MTAG_SYMBOL: return MINIM_SYMBOL_SIZE;
+    case MTAG_CLOSURE: return MINIM_CLOSURE_SIZE;
     case MTAG_TYPED_OBJ: {
+        /* Every typed-object kind shares the same shape:
+         *   header = (slot_count << 4) | secondary_tag
+         * followed by `slot_count` machine-word slots. The byte size
+         * is the same formula regardless of secondary tag, so we just
+         * read the slot count and reuse the vector helper. */
         mobj header = *(mobj *)minim_untag(v);
-        mobj sec = header & MSEC_MASK;
-        if (sec == MSEC_VECTOR) {
-            size_t length = (size_t)(header >> 4);
-            return minim_vector_size(length);
-        }
-        /* fall-through: unknown typed object — should not happen in v1 */
-        fprintf(stderr, "minim: gc: unknown secondary tag %lx\n",
-                (unsigned long)sec);
-        abort();
+        size_t slots = (size_t)(header >> 4);
+        return minim_vector_size(slots);
     }
     default:
         fprintf(stderr, "minim: gc: object_size on non-heap tag %lx\n",
@@ -143,15 +142,29 @@ static void scan_fields(char *base, mobj tag, char *to_base) {
     case MTAG_SYMBOL:
         /* header + char* (outside GC heap) — not forwarded */
         break;
+    case MTAG_CLOSURE: {
+        /* Four fixed mobj slots: params, body, env, name. */
+        mobj *slots = (mobj *)base;
+        forward_tagged(&slots[0], to_base);
+        forward_tagged(&slots[1], to_base);
+        forward_tagged(&slots[2], to_base);
+        forward_tagged(&slots[3], to_base);
+        break;
+    }
     case MTAG_TYPED_OBJ: {
+        /* Uniform trace: forward every payload slot. The secondary tag
+         * dictates *interpretation* (which slot means what), but the
+         * GC only needs to know that every slot is either an mobj
+         * (forwarded) or a leaf-tagged raw word (no-op via
+         * minim_is_leaf inside forward_tagged). For MSEC_PRIM, the
+         * payload stores a leaf-tagged fixnum index into an out-of-heap
+         * function table, so forward_tagged naturally short-circuits
+         * without tracing it. */
         mobj header = ((mobj *)base)[0];
-        mobj sec = header & MSEC_MASK;
-        if (sec == MSEC_VECTOR) {
-            size_t length = (size_t)(header >> 4);
-            mobj *slots = (mobj *)base + 1;
-            for (size_t i = 0; i < length; i++)
-                forward_tagged(&slots[i], to_base);
-        }
+        size_t slots = (size_t)(header >> 4);
+        mobj *payload = (mobj *)base + 1;
+        for (size_t i = 0; i < slots; i++)
+            forward_tagged(&payload[i], to_base);
         break;
     }
     default:
@@ -251,6 +264,7 @@ static void do_collect(void) {
         case MTAG_PAIR:    sz = MINIM_PAIR_SIZE; break;
         case MTAG_FLONUM:  sz = MINIM_FLONUM_SIZE; break;
         case MTAG_SYMBOL:  sz = MINIM_SYMBOL_SIZE; break;
+        case MTAG_CLOSURE: sz = MINIM_CLOSURE_SIZE; break;
         case MTAG_TYPED_OBJ: {
             mobj header = ((mobj *)heap.scan)[0];
             size_t length = (size_t)(header >> 4);

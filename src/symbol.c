@@ -9,7 +9,19 @@
  * Special symbols
  * --------------------------------------------------------------------- */
 
+mobj begin_sym;
+mobj define_sym;
+mobj if_sym;
+mobj lambda_sym;
+mobj let_sym;
 mobj quote_sym;
+mobj set_sym;
+
+#define INTERN_AND_PROTECT(sym, name) \
+    do { \
+        sym = Mintern(name); \
+        minim_protect(&sym); \
+    } while (0)
 
 /* -----------------------------------------------------------------------
  * Intern table — chained hash map keyed by name string.
@@ -41,6 +53,14 @@ void symbol_init(void) {
     intern_table_sz = INTERN_TABLE_INIT_SIZE;
     intern_table = calloc(intern_table_sz, sizeof(intern_bucket *));
     if (!intern_table) { fprintf(stderr, "minim: intern table OOM\n"); abort(); }
+
+    INTERN_AND_PROTECT(begin_sym, "begin");
+    INTERN_AND_PROTECT(define_sym, "define");
+    INTERN_AND_PROTECT(if_sym, "if");
+    INTERN_AND_PROTECT(lambda_sym, "lambda");
+    INTERN_AND_PROTECT(let_sym, "let");
+    INTERN_AND_PROTECT(quote_sym, "quote");
+    INTERN_AND_PROTECT(set_sym, "set!");
 }
 
 mobj Mintern(const char *name) {
@@ -96,8 +116,17 @@ void symbol_shutdown(void) {
             b = next;
         }
     }
+
     free(intern_table);
     intern_table = NULL;
     intern_table_sz = 0;
     intern_table_n = 0;
+
+    begin_sym = 0;
+    define_sym = 0;
+    if_sym = 0;
+    lambda_sym = 0;
+    let_sym = 0;
+    quote_sym = 0;
+    set_sym = 0;
 }

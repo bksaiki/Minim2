@@ -63,6 +63,7 @@ static void test_immediate_values(void) {
     CHECK(Mfalse == (mobj)0x06, "MFALSE == 0x06");
     CHECK(Mtrue == (mobj)0x0E, "MTRUE  == 0x0E");
     CHECK(Mnull == (mobj)0x26, "MNULL  == 0x26");
+    CHECK(Mvoid == (mobj)0x2E, "MVOID  == 0x2E");
     CHECK(Meof  == (mobj)0x36, "MEOF   == 0x36");
     CHECK(MFORWARD_MARKER == (mobj)0x3E, "MFORWARD_MARKER == 0x3E");
 
