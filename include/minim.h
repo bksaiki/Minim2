@@ -352,6 +352,7 @@ void Mwrite(mobj v, FILE *out);
 
 extern mobj begin_sym;
 extern mobj if_sym;
+extern mobj lambda_sym;
 extern mobj let_sym;
 extern mobj quote_sym;
 

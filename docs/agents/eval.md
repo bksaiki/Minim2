@@ -91,22 +91,39 @@ absorb GCs; C locals don't.
       `MINIM_GC_STRESS=ON` configs both pass.
 
 ## Phase 4 — `lambda` and procedure application
-- [ ] Cache `lambda_sym`.
-- [ ] `(lambda (params...) body...)` constructs a closure capturing
+- [x] Cache `lambda_sym` alongside the other special-form symbols.
+- [x] `(lambda (params...) body...)` constructs a closure capturing
       the current env. Body is a list, evaluated as implicit
-      `begin`. Optional name slot stays `#f` (filled later by
-      `define`-time naming once that lands).
-- [ ] Procedure application path: `KONT_APP` push, evaluate
-      operator and arguments left-to-right, pop before invoking.
-      Closure invocation extends the closure's captured env with a
-      rib of `[param0 arg0 ...]` and EVALs the body. Primitive and
-      kont invocation paths come in later phases.
-- [ ] Arity check: error if argument count doesn't match the
-      closure's params length. (No varargs/rest-args yet.)
-- [ ] Tests: identity `((lambda (x) x) 42)`, two-arg
-      `((lambda (x y) y) 1 2)`, closure capture
-      `(((lambda (x) (lambda () x)) 7))`, env shadowing across
-      lambda boundaries, nested `let` inside a lambda body.
+      `begin`. Name slot is `#f` for now; Phase 5's `define` will
+      fill it for top-level closures.
+- [x] Procedure application path: `KONT_APP` push, evaluate
+      operator first then arguments left-to-right, prepend each
+      value to `evald` (reverse-order accumulator), invoke when
+      `unev` is empty. Frame is popped before the closure's body
+      runs — automatic tail-call placement.
+- [x] Closure invocation: `Mvector` rib `[p0 a0 ...]`, `Menv_extend`
+      onto the captured env, EVAL body as implicit `begin`. The
+      `Mprimp` and `Mkontp` dispatch arms are stubs that route to
+      `Merror`; full implementations land in Phases 6 and 8.
+- [x] Arity check: `Merror` if `list_length(params) != list_length
+      (args)`.
+- [x] Tests in `tests/test_eval.c`: identity, multi-arg, zero-arg,
+      multi-expression body, closure capture (incl. independent
+      captures from a constructor), shadowing across lambda
+      boundaries, lambda passed as arg, `let`-inside-`lambda` and
+      `lambda`-inside-`let`, recoverable arity / non-procedure
+      errors via the `Merror` longjmp handler, and a 50-arg stress
+      case. Default and `MINIM_GC_STRESS=ON` configs both pass.
+
+### GC discipline carried over
+
+`KONT_APP` allocates several times in its APPLY branch (Mcons for
+the evald snapshot, Mvector for the rib, Menv_extend for the new
+env, possibly Mkont_seq for the body). Same pattern as KONT_LET —
+snapshot every kont field into protected locals before the first
+allocation, then write back to the frame through `eval_kont` (the
+registered global) rather than the C local `k`, which goes stale
+across each allocation.
 
 ## Phase 5 — top-level env, `set!`, `define`
 - [ ] Top-level env structure (hash-table-on-vector keyed by

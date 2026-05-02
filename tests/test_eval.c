@@ -285,6 +285,185 @@ static void test_let_many(void) {
     Mshutdown();
 }
 
+/* ----------------------------------------------------------------------
+ * Phase 4 — `lambda` and procedure application
+ * -------------------------------------------------------------------- */
+
+static void test_lambda_basic(void) {
+    Minit();
+    /* Identity. */
+    CHECK(Mfixnum_val(eval_str("((lambda (x) x) 42)")) == 42,
+          "lambda: identity");
+
+    /* Two-arg, body returns second. */
+    CHECK(Mfixnum_val(eval_str("((lambda (x y) y) 1 2)")) == 2,
+          "lambda: two-arg, second wins");
+    CHECK(Mfixnum_val(eval_str("((lambda (x y) x) 1 2)")) == 1,
+          "lambda: two-arg, first");
+
+    /* Zero-arg. */
+    CHECK(Mfixnum_val(eval_str("((lambda () 99))")) == 99,
+          "lambda: zero-arg");
+
+    /* Multi-expression body — implicit begin, last is tail. */
+    CHECK(Mfixnum_val(eval_str("((lambda (x) 1 2 x) 7)")) == 7,
+          "lambda: multi-expr body");
+
+    /* Lambda evaluates to a closure (a procedure). */
+    CHECK(Mprocedurep(eval_str("(lambda (x) x)")),
+          "lambda: evaluates to a procedure");
+    CHECK(Mclosurep(eval_str("(lambda (x) x)")),
+          "lambda: evaluates to a closure specifically");
+    Mshutdown();
+}
+
+static void test_closure_capture(void) {
+    Minit();
+    /* Closure remembers its captured value. */
+    CHECK(Mfixnum_val(eval_str("(((lambda (x) (lambda () x)) 7))")) == 7,
+          "closure: captured x");
+
+    /* Two captures from the same outer constructor each retain
+     * their own captured value — branch chooses which to invoke. */
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((make-const (lambda (n) (lambda () n))))"
+        "  (let ((c1 (make-const 10)))"
+        "    (let ((c2 (make-const 20)))"
+        "      (if #t (c1) (c2)))))")) == 10,
+        "closure: each captured n stays independent (c1 path)");
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((make-const (lambda (n) (lambda () n))))"
+        "  (let ((c1 (make-const 10)))"
+        "    (let ((c2 (make-const 20)))"
+        "      (if #f (c1) (c2)))))")) == 20,
+        "closure: each captured n stays independent (c2 path)");
+
+    /* Closure capturing through a let. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 5)) ((lambda () x)))")) == 5,
+          "closure: captures let-bound var");
+
+    /* Inner closure captures outer let; outer's binding survives the
+     * inner lambda's invocation. */
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((x 11))"
+        "  ((lambda () x)))")) == 11,
+        "closure: captures outer let across lambda boundary");
+    Mshutdown();
+}
+
+static void test_lambda_shadowing(void) {
+    Minit();
+    /* lambda's parameter shadows an outer binding. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) ((lambda (x) x) 99))")) == 99,
+          "shadow: lambda param hides let-bound var");
+
+    /* After lambda returns, outer var is intact. */
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((x 1))"
+        "  (begin"
+        "    ((lambda (x) x) 99)"
+        "    x))")) == 1,
+        "shadow: outer x intact after lambda");
+
+    /* Nested lambdas with same param name. */
+    CHECK(Mfixnum_val(eval_str(
+        "(((lambda (x) (lambda (x) x)) 1) 2)")) == 2,
+        "shadow: inner lambda param hides outer");
+    Mshutdown();
+}
+
+static void test_let_in_lambda(void) {
+    Minit();
+    CHECK(Mfixnum_val(eval_str(
+        "((lambda (x) (let ((y 10)) y)) 99)")) == 10,
+        "let-in-lambda: inner let result");
+
+    CHECK(Mfixnum_val(eval_str(
+        "((lambda (x) (let ((y 10)) x)) 99)")) == 99,
+        "let-in-lambda: lambda param visible from let body");
+
+    /* Let body containing a lambda that closes over the let binding. */
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((x 7))"
+        "  (let ((f (lambda () x)))"
+        "    (f)))")) == 7,
+        "let-in-lambda: let-bound closure invoked");
+    Mshutdown();
+}
+
+static void test_higher_order(void) {
+    Minit();
+    /* Pass a closure as an argument. */
+    CHECK(Mfixnum_val(eval_str(
+        "((lambda (f) (f)) (lambda () 42))")) == 42,
+        "ho: closure as arg, then invoked");
+
+    CHECK(Mfixnum_val(eval_str(
+        "((lambda (f x) (f x)) (lambda (y) y) 5)")) == 5,
+        "ho: apply received closure to received arg");
+
+    /* Compose-ish: (apply f x) where f is identity. */
+    CHECK(Mfixnum_val(eval_str(
+        "(((lambda (f) (lambda (x) (f x))) (lambda (y) y)) 8)")) == 8,
+        "ho: 2-level closure that wraps identity");
+    Mshutdown();
+}
+
+/* Errors */
+
+static int eval_caught_error(const char *src) {
+    jmp_buf jmp;
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    int errored = 0;
+    if (setjmp(jmp) == 0) {
+        eval_str(src);
+    } else {
+        errored = 1;
+    }
+    minim_error_jmp = NULL;
+    return errored;
+}
+
+static void test_application_errors(void) {
+    Minit();
+    /* Arity mismatch — too few args. */
+    CHECK(eval_caught_error("((lambda (x y) x) 1)"),
+          "error: too few args");
+    /* Arity mismatch — too many. */
+    CHECK(eval_caught_error("((lambda (x) x) 1 2)"),
+          "error: too many args");
+    /* Application of non-procedure. */
+    CHECK(eval_caught_error("(42 1 2)"),
+          "error: applying a fixnum");
+    CHECK(eval_caught_error("(#t)"),
+          "error: applying #t");
+    /* Malformed lambda. */
+    CHECK(eval_caught_error("(lambda)"), "error: lambda with no args");
+    CHECK(eval_caught_error("(lambda (1) 1)"),
+          "error: lambda with non-symbol param");
+    Mshutdown();
+}
+
+static void test_lambda_many_args(void) {
+    Minit();
+    /* 50-arg lambda; body returns the last param. Stresses both the
+     * KONT_APP arg-walk and the rib build. */
+    char buf[8192];
+    size_t pos = 0;
+    pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, "((lambda (");
+    for (int i = 0; i < 50; i++)
+        pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, "p%d ", i);
+    pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, ") p49)");
+    for (int i = 0; i < 50; i++)
+        pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, " %d", i);
+    pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, ")");
+
+    mobj v = eval_str(buf);
+    CHECK(Mfixnum_val(v) == 49, "lambda: 50-arg call returns last param");
+    Mshutdown();
+}
+
 int main(void) {
     test_self_evaluating();
     test_quote();
@@ -299,6 +478,13 @@ int main(void) {
     test_let_in_if();
     test_let_unbound_error();
     test_let_many();
+    test_lambda_basic();
+    test_closure_capture();
+    test_lambda_shadowing();
+    test_let_in_lambda();
+    test_higher_order();
+    test_application_errors();
+    test_lambda_many_args();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

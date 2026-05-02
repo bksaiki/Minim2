@@ -11,6 +11,7 @@
 
 mobj begin_sym;
 mobj if_sym;
+mobj lambda_sym;
 mobj let_sym;
 mobj quote_sym;
 
@@ -53,6 +54,7 @@ void symbol_init(void) {
 
     INTERN_AND_PROTECT(begin_sym, "begin");
     INTERN_AND_PROTECT(if_sym, "if");
+    INTERN_AND_PROTECT(lambda_sym, "lambda");
     INTERN_AND_PROTECT(let_sym, "let");
     INTERN_AND_PROTECT(quote_sym, "quote");
 }
@@ -118,6 +120,7 @@ void symbol_shutdown(void) {
 
     begin_sym = 0;
     if_sym = 0;
+    lambda_sym = 0;
     let_sym = 0;
     quote_sym = 0;
 }

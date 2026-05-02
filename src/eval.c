@@ -239,6 +239,27 @@ static void step_eval(void) {
             return;
         }
 
+        if (head == lambda_sym) {
+            /* (lambda (params...) body...). Construct a closure that
+             * captures the current env. The body is a list of forms
+             * run as implicit `begin` once the closure is invoked.
+             * Closure name is `#f` for now; Phase 5's `define` will
+             * fill it in for top-level closures. */
+            if (list_length(rest) < 2)
+                Merror("malformed lambda (need params and body)");
+            mobj params = Mcar(rest);
+            mobj body = Mcdr(rest);
+            if (!Mnullp(params) && !Mpairp(params))
+                Merror("lambda: params must be a list");
+            for (mobj p = params; Mpairp(p); p = Mcdr(p)) {
+                if (!Msymbolp(Mcar(p)))
+                    Merror("lambda: param name must be a symbol");
+            }
+            eval_expr = Mclosure(params, body, eval_env, Mfalse);
+            eval_mode = APPLY_MODE;
+            return;
+        }
+
         if (head == let_sym) {
             /* (let ((var0 init0) ...) body ...). Evaluate inits
              * left-to-right in the *current* env. Once all are
@@ -277,10 +298,20 @@ static void step_eval(void) {
             return;
         }
 
-        /* Unrecognized compound form. Procedure application lands in
-         * Phase 3; for now this is a recoverable user error. */
-        Merror("procedure application not supported in v0");
-        return; /* unreachable */
+        /* Procedure application. Push KONT_APP and evaluate the
+         * operator first; KONT_APP's APPLY path then walks through
+         * the arguments left-to-right, finally invoking the operator
+         * on the accumulated values.
+         *
+         * Discipline: stash the operator in eval_expr (registered)
+         * BEFORE Mkont_app allocates, so the kont push can't strand
+         * the operator expression in a stale C local. `args` is a
+         * read of expr's cdr; Mkont_app protects it as `unev` once
+         * inside the call. */
+        mobj args = Mcdr(expr);
+        eval_expr = Mcar(expr);
+        eval_kont = Mkont_app(eval_kont, eval_env, args, Mnull);
+        return;
     }
 
     /* Mnull, or some other non-evaluable form. */
@@ -345,6 +376,126 @@ static void step_apply(void) {
         }
         eval_expr = first;
         eval_mode = EVAL_MODE;
+        return;
+    }
+
+    if (kind == KONT_APP) {
+        /* The just-arrived value is the next position in the
+         * operator-and-args sequence. Prepend it to `evald` (which
+         * is in reverse order). If unevaluated args remain, advance
+         * to the next; otherwise it's time to invoke.
+         *
+         * Convention: `evald` ends up holding [aN, ..., a0, op] in
+         * reverse-of-evaluation order. Reversing once at invocation
+         * time gives the natural [op, a0, ..., aN] form.
+         *
+         * Discipline mirrors KONT_LET: snapshot every kont field
+         * into protected locals before the first allocation, then
+         * use eval_kont (the registered global) to write back into
+         * the frame. The C local `k` goes stale across each Mcons /
+         * Mvector / Menv_extend in this branch. */
+        MINIM_GC_FRAME_BEGIN;
+        mobj unev = Mnull, evald = Mnull;
+        mobj parent = Mnull, saved_env = Mnull;
+        mobj value = Mnull;
+        MINIM_GC_PROTECT(unev);
+        MINIM_GC_PROTECT(evald);
+        MINIM_GC_PROTECT(parent);
+        MINIM_GC_PROTECT(saved_env);
+        MINIM_GC_PROTECT(value);
+
+        unev = Mtyped_obj_ref(k, 3);
+        evald = Mtyped_obj_ref(k, 4);
+        parent = Mkont_parent(k);
+        saved_env = Mkont_env(k);
+        value = eval_expr;
+
+        /* Snapshot the new value onto evald. */
+        evald = Mcons(value, evald);
+
+        if (Mpairp(unev)) {
+            /* More to evaluate. Update the frame, EVAL the next. */
+            mobj next_expr = Mcar(unev);
+            mobj rest_unev = Mcdr(unev);
+            Mtyped_obj_set(eval_kont, 3, rest_unev);
+            Mtyped_obj_set(eval_kont, 4, evald);
+            eval_env = saved_env;
+            eval_expr = next_expr;
+            MINIM_GC_FRAME_END;
+            eval_mode = EVAL_MODE;
+            return;
+        }
+
+        /* unev is empty — we have a complete (op + args) sequence.
+         * Reverse evald to get [op, a0, ..., aN]. */
+        mobj reversed = Mnull, walk = Mnull;
+        MINIM_GC_PROTECT(reversed);
+        MINIM_GC_PROTECT(walk);
+        walk = evald;
+        while (Mpairp(walk)) {
+            reversed = Mcons(Mcar(walk), reversed);
+            walk = Mcdr(walk);
+        }
+        mobj op = Mnull, args = Mnull;
+        MINIM_GC_PROTECT(op);
+        MINIM_GC_PROTECT(args);
+        op = Mcar(reversed);
+        args = Mcdr(reversed);
+
+        /* Pop the KONT_APP frame. The procedure's body will run with
+         * `parent` as the current kont — automatic tail-call
+         * placement. */
+        eval_kont = parent;
+
+        if (Mclosurep(op)) {
+            mobj params = Mnull, body = Mnull, captured_env = Mnull;
+            mobj rib = Mnull;
+            MINIM_GC_PROTECT(params);
+            MINIM_GC_PROTECT(body);
+            MINIM_GC_PROTECT(captured_env);
+            MINIM_GC_PROTECT(rib);
+
+            params = Mclosure_params(op);
+            body = Mclosure_body(op);
+            captured_env = Mclosure_env(op);
+
+            size_t n_params = list_length(params);
+            size_t n_args = list_length(args);
+            if (n_params != n_args) {
+                Merror("arity mismatch: closure expected %zu arg%s, got %zu",
+                       n_params, n_params == 1 ? "" : "s", n_args);
+            }
+            if (Mnullp(body)) Merror("closure has empty body");
+
+            /* Build rib [p0 a0 p1 a1 ...]. No allocation inside the
+             * loop, so plain C locals for `p` and `a` are safe. */
+            rib = Mvector(2 * n_params, Mfalse);
+            mobj p = params, a = args;
+            for (size_t i = 0; i < n_params; i++) {
+                Mvector_set(rib, 2 * i,     Mcar(p));
+                Mvector_set(rib, 2 * i + 1, Mcar(a));
+                p = Mcdr(p);
+                a = Mcdr(a);
+            }
+
+            eval_env = Menv_extend(rib, captured_env);
+            eval_expr = Mcar(body);
+            mobj more_body = Mcdr(body);
+            if (Mpairp(more_body)) {
+                eval_kont = Mkont_seq(eval_kont, eval_env, more_body);
+            }
+            MINIM_GC_FRAME_END;
+            eval_mode = EVAL_MODE;
+            return;
+        }
+
+        if (Mprimp(op) || Mkontp(op)) {
+            Merror("procedure kind not yet supported (Phase 4 closures only)");
+        } else {
+            Merror("attempt to apply a non-procedure value");
+        }
+        /* Merror longjmps; not reached. */
+        MINIM_GC_FRAME_END;
         return;
     }
 
