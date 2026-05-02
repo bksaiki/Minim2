@@ -6,7 +6,7 @@ The design is a deliberate slim-down of Chez Scheme's runtime (referenced as `c/
 
 ## Scope
 
-**Types supported in v1**: fixnum, pair, flonum, symbol, vector, plus four immediate constants (`#t`, `#f`, `'()`, `eof`). Anything else — closures, strings, bignums, characters, records, ports — is out of scope for now and reserved in the tag space.
+**Types supported in v1**: fixnum, pair, flonum, symbol, vector, character, plus five immediate constants (`#t`, `#f`, `'()`, `eof`, `void`). Closures, env frames, kont frames, and primitive procedures are runtime-internal heap kinds added by the evaluator (see [`docs/EVAL.md`](EVAL.md)). Anything else — strings, bignums, records, ports — is out of scope for now and reserved in the tag space.
 
 **Concurrency**: single-threaded. No locks, no atomics.
 

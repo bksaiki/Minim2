@@ -4,10 +4,10 @@ Tracker for the s-expression reader. Source of truth for the legacy
 implementation: `old_parser.c` at the project root. The new parser lives
 in `src/read.c` with its public API in `include/minim.h`.
 
-The runtime in v1 supports six concrete types — fixnum, pair, flonum,
-symbol, vector — plus four immediates (`#t`, `#f`, `'()`, `eof`). Reader
-features that depend on types we haven't built yet (characters, strings,
-boxes) are intentionally deferred and listed below.
+The runtime supports six concrete types — fixnum, pair, flonum,
+symbol, vector, character — plus five immediates (`#t`, `#f`, `'()`,
+`eof`, `void`). Reader features that depend on types we haven't built
+yet (strings, boxes) are intentionally deferred and listed below.
 
 ## Phase 1 — input source abstraction
 - [x] `mreader` struct that wraps either a C string or a `FILE *`

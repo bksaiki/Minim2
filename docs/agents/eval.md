@@ -5,10 +5,11 @@ design decisions: [`docs/EVAL.md`](../EVAL.md). The interpreter lives
 in `src/eval.c` (and split-out helpers as needed) with its public API
 in `include/minim.h`.
 
-The runtime currently has fixnum, pair, flonum, symbol, vector, plus
-four immediates (`#t`, `#f`, `'()`, `eof`). The evaluator adds five
-new heap-object kinds — closure (primary tag `MTAG_CLOSURE`), env,
-kont, prim — with kont mobjs doubling as first-class continuations.
+The runtime has six concrete types — fixnum, pair, flonum, symbol,
+vector, character — plus five immediates (`#t`, `#f`, `'()`, `eof`,
+`void`). The evaluator adds four new heap-object kinds — closure
+(primary tag `MTAG_CLOSURE`), env, kont, prim — with kont mobjs
+doubling as first-class continuations.
 
 ## Phase 1 — heap shapes
 - [x] Add `MTAG_CLOSURE` (primary) plus secondary tags `MSEC_KONT`,
@@ -170,11 +171,11 @@ across each allocation.
         `list?`.
       - Equality: `eq?`, `eqv?`. `equal?` deferred until we have
         cycle-aware structural equality.
-      - I/O: `display`, `write`, `newline`, `read`. `display` is
-        currently identical to `write` (until strings/chars exist —
-        see `docs/agents/writer.md` Phase 3).
+      - I/O: `display`, `write`, `newline`, `read`. `display` only
+        diverges from `write` once strings exist (chars are already
+        readable both ways).
       - Type predicates: `symbol?`, `number?`, `boolean?`,
-        `procedure?`, `vector?`, `eof-object?`.
+        `procedure?`, `vector?`, `char?`, `eof-object?`.
       - Vectors: `make-vector`, `vector-ref`, `vector-set!`,
         `vector-length`, `vector?`, `vector`.
 - [ ] Tests per group.
@@ -223,8 +224,9 @@ across each allocation.
 - Tail-call analysis at parse time. Kont-placement rules give us
   TCO automatically; no analysis needed.
 - Bignums, rationals, complex numbers.
-- Characters and strings (blocked on the runtime types not existing
-  yet).
+- Strings (blocked on the runtime type not existing yet). Characters
+  exist — see `docs/agents/chars.md` — but their primitive surface
+  (`char?`, `char->integer`, etc.) lands as part of Phase 6.
 - `delay`/`force`/promises.
 - Continuation marks.
 - `eval` inside the language.
