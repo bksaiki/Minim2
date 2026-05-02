@@ -38,10 +38,13 @@ These cannot be implemented until the corresponding runtime type lands.
 The legacy `old_parser.c` already has the syntax handling and can be
 ported once the type exists.
 
-- [ ] Characters `#\<name>` and `#\<single>` — needs a `mchar` value
-      type (R7RS named chars: `alarm`, `backspace`, `delete`, `esc`,
-      `linefeed`, `newline`, `nul`, `page`, `return`, `space`, `tab`,
-      `vtab`).
+- [x] Characters `#\<name>` / `#\<single>` / `#\xHH...` — landed
+      via `docs/agents/chars.md`. R7RS named chars only: `alarm`,
+      `backspace`, `delete`, `escape`, `newline`, `null`, `return`,
+      `space`, `tab`. Hex form accepts up to `0x10FFFF`. Disambig:
+      first non-alphabetic char or first-only-then-delimiter is a
+      single-char form; otherwise read until delimiter and match
+      hex (`x[0-9a-fA-F]+`) or named.
 - [ ] Strings `"..."` with `\n`/`\t`/`\\`/`\'`/`\"` escapes — needs a
       mutable string type.
 - [ ] Boxes `#&datum` — needs a box type. (Commented out in legacy.)

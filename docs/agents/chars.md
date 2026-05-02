@@ -118,14 +118,21 @@ multi-word encoding.
 
 ## Phase 5 — doc / cross-reference cleanup
 
-- [ ] Update the `MTAG_IMMEDIATE` row in `docs/GC.md` to list chars
-      (low byte `0x16`, codepoint in upper bits).
-- [ ] Tick off the "Characters" item in `docs/agents/parser.md`
-      Phase 4 and `docs/agents/writer.md` Phase 4. Both currently
-      say "needs the char type" — once the type lands, the syntax
-      handlers from this doc satisfy them.
-- [ ] Cross-link this doc from `docs/EVAL.md` Scope, since chars
-      become a sixth supported value type.
+- [x] Updated the `MTAG_IMMEDIATE` row in `docs/GC.md` to mention
+      chars (low byte `0x16`, codepoint in upper bits) and added a
+      char-encoding block alongside the existing `Mimmediate` block.
+      The "Why this layout" bullet that listed characters as a
+      future addition now treats them as present.
+- [x] `docs/agents/parser.md` Phase 4 character item ticked off,
+      with a one-line summary of the disambiguation rule. Chez
+      aliases (`esc`, `linefeed`, `nul`, etc.) explicitly removed
+      from the named-char list — only R7RS canonical names are
+      accepted.
+- [x] `docs/agents/writer.md` Phase 4 character item ticked off,
+      with the canonical-name spelling rules.
+- [x] `docs/EVAL.md` Scope updated: characters now appear in the
+      "value types supported in v1" list with a link to this doc;
+      the "out of scope" line drops the `characters` item.
 
 ## Phase 6 — primitive procedures (NOT implemented as part of this work)
 
