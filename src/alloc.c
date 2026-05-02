@@ -5,21 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Defined in symbol.c. Tears down the intern table; must run before
- * gc_shutdown so we can still read symbol name pointers. */
-void symbol_shutdown(void);
-
-#define HEAP_INITIAL_BYTES (1024 * 1024) /* 1 MiB per semispace */
-
-void Minit(void) {
-    gc_init(HEAP_INITIAL_BYTES);
-}
-
-void Mshutdown(void) {
-    symbol_shutdown();
-    gc_shutdown();
-}
-
 mobj Mcons(mobj car, mobj cdr) {
     MINIM_GC_FRAME_BEGIN;
     MINIM_GC_PROTECT2(car, cdr);

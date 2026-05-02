@@ -11,6 +11,8 @@
  * bytes. The publicly visible accessors live in minim.h.
  * -------------------------------------------------------------------- */
 
+#define HEAP_INITIAL_BYTES (1024 * 1024) /* 1 MiB per semispace */
+
 #define MINIM_ALIGN_BYTES 16
 #define MINIM_ALIGN(n)    (((size_t)(n) + (MINIM_ALIGN_BYTES - 1)) & ~(size_t)(MINIM_ALIGN_BYTES - 1))
 
