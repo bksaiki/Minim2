@@ -165,6 +165,12 @@ void Minit(void);
 void Mshutdown(void);
 
 /* ----------------------------------------------------------------------
+ * Interned symbols
+ * -------------------------------------------------------------------- */
+
+ extern mobj quote_sym;
+
+/* ----------------------------------------------------------------------
  * Roots: shadow stack + globals
  *
  * Use MINIM_GC_FRAME_BEGIN/END to bracket any C function that holds

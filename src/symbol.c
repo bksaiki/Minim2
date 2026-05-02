@@ -6,6 +6,12 @@
 #include <stdio.h>
 
 /* -----------------------------------------------------------------------
+ * Special symbols
+ * --------------------------------------------------------------------- */
+
+mobj quote_sym;
+
+/* -----------------------------------------------------------------------
  * Intern table — chained hash map keyed by name string.
  * Lives entirely outside the GC heap (malloc'd).
  * --------------------------------------------------------------------- */
@@ -31,15 +37,13 @@ static unsigned long hash_name(const char *s, size_t len) {
     return h;
 }
 
-static void intern_table_init(void) {
+void symbol_init(void) {
     intern_table_sz = INTERN_TABLE_INIT_SIZE;
     intern_table = calloc(intern_table_sz, sizeof(intern_bucket *));
     if (!intern_table) { fprintf(stderr, "minim: intern table OOM\n"); abort(); }
 }
 
 mobj Mintern(const char *name) {
-    if (!intern_table) intern_table_init();
-
     size_t len = strlen(name);
     size_t idx = (size_t)(hash_name(name, len) % intern_table_sz);
 

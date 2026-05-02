@@ -9,23 +9,6 @@
 
 #define READ_BUF_MAX 256
 
-/* Cached interned symbol for `quote`. Registered as a global root on
- * first use; cleared by parser_shutdown so a Mshutdown/Minit cycle
- * does not leave a dangling pointer. */
-static mobj quote_sym = 0;
-
-void parser_shutdown(void) {
-    quote_sym = 0;
-}
-
-static mobj get_quote_sym(void) {
-    if (quote_sym == 0) {
-        quote_sym = Mintern("quote");
-        minim_protect(&quote_sym);
-    }
-    return quote_sym;
-}
-
 /* ----------------------------------------------------------------------
  * mreader: peek / read
  * -------------------------------------------------------------------- */
@@ -390,15 +373,13 @@ static mobj read_datum(mreader *r) {
 
     if (c == '\'') {
         MINIM_GC_FRAME_BEGIN;
-        mobj inner = Mnull, tail = Mnull, lst = Mnull, q = Mnull;
+        mobj inner = Mnull, tail = Mnull, lst = Mnull;
         MINIM_GC_PROTECT(inner);
         MINIM_GC_PROTECT(tail);
         MINIM_GC_PROTECT(lst);
-        MINIM_GC_PROTECT(q);
         inner = read_datum(r);
         tail = Mcons(inner, Mnull);
-        q = get_quote_sym();
-        lst = Mcons(q, tail);
+        lst = Mcons(quote_sym, tail);
         MINIM_GC_RETURN(lst);
     }
 
