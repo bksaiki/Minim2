@@ -130,7 +130,7 @@ static void skip_block_comment(mreader *r) {
     }
 }
 
-static void skip_atmosphere(mreader *r) {
+static void skip_whitespace(mreader *r) {
     for (;;) {
         int c = reader_peek(r);
         if (c == EOF) return;
@@ -236,7 +236,7 @@ static mobj read_list(mreader *r, int open_paren) {
     MINIM_GC_PROTECT(cell);
 
     for (;;) {
-        skip_atmosphere(r);
+        skip_whitespace(r);
         int c = reader_peek(r);
 
         if (c == EOF) parse_error("unterminated list");
@@ -254,10 +254,10 @@ static mobj read_list(mreader *r, int open_paren) {
             int n = reader_peek(r);
             if (is_delimiter(n)) {
                 if (Mnullp(head)) parse_error("dotted pair with no car");
-                skip_atmosphere(r);
+                skip_whitespace(r);
                 x = read_datum(r);
                 Mset_cdr(tail, x);
-                skip_atmosphere(r);
+                skip_whitespace(r);
                 int e = reader_get(r);
                 if (!is_close_paren(e))
                     parse_error_c("expected close paren after dotted cdr", e);
@@ -298,7 +298,7 @@ static mobj read_vector(mreader *r) {
 
     size_t length = 0;
     for (;;) {
-        skip_atmosphere(r);
+        skip_whitespace(r);
         int c = reader_peek(r);
         if (c == EOF) parse_error("unterminated vector");
         if (c == ')') { reader_get(r); break; }
@@ -345,7 +345,7 @@ static mobj read_hash(mreader *r) {
         return read_hex_fixnum(r);
     case ';': {
         /* Datum comment — read and discard one datum, then continue. */
-        skip_atmosphere(r);
+        skip_whitespace(r);
         if (reader_peek(r) == EOF)
             parse_error("datum comment with nothing to discard");
         (void)read_datum(r);
@@ -381,7 +381,7 @@ static mobj read_hash(mreader *r) {
  * -------------------------------------------------------------------- */
 
 static mobj read_datum(mreader *r) {
-    skip_atmosphere(r);
+    skip_whitespace(r);
     int c = reader_get(r);
 
     if (c == EOF) return Meof;

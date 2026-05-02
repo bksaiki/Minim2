@@ -12,7 +12,7 @@ set(MINIM_RUNTIME_SOURCES
     src/gc.c
     src/parser.c
     src/symbol.c
-    src/symbol.c
+    src/system.c
 )
 
 add_executable(minim
