@@ -2,7 +2,7 @@
 
 Tracker for the s-expression reader. Source of truth for the legacy
 implementation: `old_parser.c` at the project root. The new parser lives
-in `src/parser.c` with its public API in `include/parser.h`.
+in `src/read.c` with its public API in `include/minim.h`.
 
 The runtime in v1 supports six concrete types — fixnum, pair, flonum,
 symbol, vector — plus four immediates (`#t`, `#f`, `'()`, `eof`). Reader
@@ -50,6 +50,12 @@ ported once the type exists.
 ## Phase 5 — error handling and ergonomics
 - [ ] Track line/column inside `mreader` and surface them on errors,
       instead of `abort()` with a bare message.
+- [ ] Quoted symbol form `|...|` (R7RS) for symbols whose names
+      contain delimiters, whitespace, or otherwise collide with other
+      tokens. Counterpart to the writer's escape-emit work in
+      `writer.md` — both ends must agree before round-tripping
+      arbitrary symbol names is safe. Internal `|` and `\` escape as
+      `\|` and `\\`.
 - [ ] Surface parse errors as a Scheme condition once we have an
       exception mechanism, rather than aborting the runtime.
 - [ ] Symbol max length is currently a fixed 256-byte buffer; consider a

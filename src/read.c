@@ -1,6 +1,5 @@
 #include "minim.h"
 #include "gc.h"
-#include "parser.h"
 
 #include <ctype.h>
 #include <stdio.h>
