@@ -90,36 +90,31 @@ multi-word encoding.
 
 ## Phase 3 — writer
 
-- [ ] In `Mwrite`'s immediate switch (`src/write.c`), add an arm
-      that fires when `Mcharp(v)` is true.
-- [ ] Spelling rules:
-      - If the codepoint is in the R7RS named-char set,
-        emit `#\<name>`. Specifically: 0x00 → `#\null`,
-        0x07 → `#\alarm`, 0x08 → `#\backspace`, 0x09 → `#\tab`,
-        0x0A → `#\newline`, 0x0D → `#\return`, 0x1B → `#\escape`,
-        0x20 → `#\space`, 0x7F → `#\delete`.
-      - Else if the codepoint is in printable ASCII (33–126,
-        inclusive of `!`–`~`), emit `#\<single>`.
-      - Else emit `#\x<hex>` with no `0` padding (so `0x0C` →
-        `#\xC`).
-- [ ] Tests in `tests/test_writer.c`:
-      - Each canonical name's output verified.
-      - Printable-ASCII writes as `#\X`.
-      - Codepoints outside the named set and outside printable ASCII
-        write as `#\x...` (e.g. `#\xC` for FF, `#\x1F600` for the
-        emoji).
+- [x] Added a `write_char` helper to `src/write.c` and an
+      `Mcharp(v) → write_char(v, out)` short-circuit at the top of
+      the `MTAG_IMMEDIATE` arm. Spelling:
+      - 9 R7RS named-char codepoints → `#\<name>`.
+      - Printable ASCII 0x21–0x7E (excluding 0x20/0x7F, which are
+        named) → `#\<single>`.
+      - Otherwise → `#\x%X` (uppercase hex, unpadded; the reader
+        accepts mixed case).
+- [x] Tests in `tests/test_writer.c`: each canonical name (9), a
+      printable-ASCII spread including boundaries (0x21 / 0x7E)
+      and confusables (`a`, `x`, `(`, `)`), and hex output for
+      out-of-range codepoints up to `0x10FFFF`.
 
 ## Phase 4 — round-trip
 
-The reader and writer must agree on the canonical forms, so any
-char written by `Mwrite` must be readable back by `Mread` to the
-same value.
-
-- [ ] Tests in `tests/test_writer.c` (extending the existing
-      `test_roundtrip`):
-      - `#\A`, `#\a`, `#\space`, `#\newline`, `#\null`,
-        `#\backspace`, `#\delete`, `#\escape` round-trip.
-      - `#\x1F600` round-trips via the hex form.
+- [x] `test_char_roundtrip` in `tests/test_writer.c` covers:
+      - All 9 named chars round-trip identically.
+      - Printable single chars (`#\A`, `#\a`, `#\(`) identity.
+      - `#\x1F600` (emoji) identity via hex.
+      - Hex-case normalization: `#\xff` → `#\xFF` (uppercase).
+      - Hex-to-name normalization where applicable: `#\x41` →
+        `#\A`, `#\x20` → `#\space`, `#\xA` → `#\newline`. Reader
+        accepts hex form, writer prefers the canonical name or
+        printable-ASCII spelling — both halves agree on what the
+        canonical form is. Default and stress configs both pass.
 
 ## Phase 5 — doc / cross-reference cleanup
 
