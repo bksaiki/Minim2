@@ -126,14 +126,34 @@ registered global) rather than the C local `k`, which goes stale
 across each allocation.
 
 ## Phase 5 — top-level env, `set!`, `define`
-- [ ] Top-level env structure (hash-table-on-vector keyed by
-      symbol-name hash).
-- [ ] `define` at top level: mutate top-level env. `define` inside a
-      body: extend the current env (R7RS internal-definitions).
-- [ ] `set!` with `KONT_SET` push/pop; mutates either a lexical rib
-      slot or a top-level binding.
-- [ ] Tests: `(define x 1) x`, `(set! x 2) x`, mutating a captured
-      variable from inside a closure (counter pattern).
+- [x] Top-level env: an alist of `(sym . val)` pairs registered as a
+      single global root. Linear lookup; a hash representation can
+      drop in later. `top_env_lookup` / `top_env_define` /
+      `top_env_set` helpers in `src/eval.c`.
+- [x] `define_sym` and `set_sym` (the `set!` symbol) cached in
+      `src/symbol.c` alongside the other special-form symbols.
+- [x] `(define name expr)` at top level: push `KONT_DEFINE`, EVAL
+      the value expression; APPLY mutates the top-level env. If the
+      value is an anonymous closure (`Mclosure_name == #f`), the
+      define handler fills the closure's name slot — top-level
+      closures now print as `#<procedure:name>`.
+- [ ] `define` inside a body: deferred. Proper R7RS internal
+      definitions desugar to letrec*; that pass arrives later.
+- [x] `(set! name expr)`: push `KONT_SET`, EVAL value; APPLY tries
+      `env_set` on the lexical chain first, falls through to
+      `top_env_set`. Truly unbound is `Merror("set!: unbound …")`.
+- [x] `Mvoid` immediate (0x2E) added so define/set! can return a
+      true unspecified value instead of `#f`. The writer prints it
+      as `#<void>`.
+- [x] `env_lookup` falls through to `top_env_lookup` when the
+      lexical chain runs out, before reporting unbound.
+- [x] Tests in `tests/test_eval.c`: top-level define + lookup,
+      redefinition, closure naming via define (incl. alias-keeps-
+      original-name), `set!` on let-bound, lambda-param, and
+      top-level vars, set! of unbound (recoverable via `Merror`),
+      stateful closure via captured `set!` (toggle pattern, two
+      independent toggles to verify state is per-closure). Default
+      and `MINIM_GC_STRESS=ON` configs both pass.
 
 ## Phase 6 — primitives
 - [ ] `MSEC_PRIM` constructor + `prim_register(name, fn, min, max)`

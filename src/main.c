@@ -22,7 +22,7 @@
 int main(void) {
     Minit();
 
-    fprintf(stderr, "minim %s\n", MINIM_VERSION_STRING);
+    fprintf(stderr, "Minim %s\n", MINIM_VERSION_STRING);
 
     mreader r;
     mreader_init_file(&r, stdin);

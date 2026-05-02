@@ -84,10 +84,13 @@ typedef unsigned char mbyte;
  * Immediate values
  * -------------------------------------------------------------------- */
 
-#define Mtrue      ((mobj)0x0E)
-#define Mfalse     ((mobj)0x06)
-#define Mnull      ((mobj)0x26)
-#define Meof       ((mobj)0x36)
+#define Mimmediate(v)  ((mobj) ((v << 3) | MTAG_IMMEDIATE))
+
+#define Mfalse    (Mimmediate(0x0)) // 0x06
+#define Mtrue     (Mimmediate(0x1)) // 0x0E
+#define Mnull     (Mimmediate(0x4)) // 0x26
+#define Mvoid     (Mimmediate(0x5)) // 0x2E
+#define Meof      (Mimmediate(0x6)) // 0x36
 
 /* ----------------------------------------------------------------------
  * Predicates
@@ -104,6 +107,9 @@ static inline bool Mfalsep(mobj v) {
 }
 static inline bool Meofp(mobj v)   {
     return v == Meof;
+}
+static inline bool Mvoidp(mobj v)  {
+    return v == Mvoid;
 }
 static inline bool Mbooleanp(mobj v) {
     return (v & 0xF7) == 0x06; // matches both #t and #f
@@ -351,10 +357,12 @@ void Mwrite(mobj v, FILE *out);
  * -------------------------------------------------------------------- */
 
 extern mobj begin_sym;
+extern mobj define_sym;
 extern mobj if_sym;
 extern mobj lambda_sym;
 extern mobj let_sym;
 extern mobj quote_sym;
+extern mobj set_sym;
 
 /* ----------------------------------------------------------------------
  * Roots: shadow stack + globals

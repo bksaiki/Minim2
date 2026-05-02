@@ -20,6 +20,25 @@ static mobj eval_str(const char *src) {
     return Meval(expr);
 }
 
+/* Read a stream of multiple top-level forms, eval each in sequence,
+ * and return the value of the last. Used by Phase 5 tests where
+ * `define`/`set!` need to mutate state across distinct top-level
+ * expressions. The result slot is GC-protected because Mread
+ * allocates between iterations. */
+static mobj eval_seq(const char *src) {
+    MINIM_GC_FRAME_BEGIN;
+    mobj last = Mvoid;
+    MINIM_GC_PROTECT(last);
+    mreader r;
+    mreader_init_string(&r, src);
+    for (;;) {
+        mobj expr = Mread(&r);
+        if (Meofp(expr)) break;
+        last = Meval(expr);
+    }
+    MINIM_GC_RETURN(last);
+}
+
 static void test_self_evaluating(void) {
     Minit();
     CHECK(Mfixnum_val(eval_str("42")) == 42, "self: fixnum 42");
@@ -464,6 +483,141 @@ static void test_lambda_many_args(void) {
     Mshutdown();
 }
 
+/* ----------------------------------------------------------------------
+ * Phase 5 — top-level env, `define`, `set!`
+ * -------------------------------------------------------------------- */
+
+static void test_define_basic(void) {
+    Minit();
+    /* define returns #<void>, then x looks up from top-level. */
+    CHECK(Mvoidp(eval_str("(define x 1)")), "define: returns #<void>");
+    CHECK(Mfixnum_val(eval_seq("(define x 1) x")) == 1,
+          "define: top-level binding visible");
+
+    /* Re-defining replaces. */
+    CHECK(Mfixnum_val(eval_seq("(define x 1) (define x 2) x")) == 2,
+          "define: redefining replaces");
+
+    /* Top-level binding visible from inside let body. */
+    CHECK(Mfixnum_val(eval_seq("(define g 99) (let ((y 1)) g)")) == 99,
+          "define: top-level visible from inside let");
+
+    /* Closure body sees top-level via env_lookup fallthrough. */
+    CHECK(Mfixnum_val(eval_seq(
+        "(define n 7)"
+        "((lambda () n))")) == 7,
+        "define: closure body resolves top-level");
+    Mshutdown();
+}
+
+static void test_define_names_closure(void) {
+    Minit();
+    /* (define f (lambda ...)) fills the closure's name slot. */
+    mobj v = eval_seq("(define id (lambda (x) x)) id");
+    CHECK(Mclosurep(v), "define-name: result is a closure");
+    CHECK(Msymbolp(Mclosure_name(v)), "define-name: name is a symbol");
+    CHECK(strcmp(Msymbol_name(Mclosure_name(v)), "id") == 0,
+          "define-name: closure name = 'id'");
+
+    /* If the closure already has a name (e.g., aliased via another
+     * define), the *original* name is preserved. */
+    v = eval_seq("(define f (lambda (x) x)) (define g f) g");
+    CHECK(Mclosurep(v), "define-alias: still a closure");
+    CHECK(strcmp(Msymbol_name(Mclosure_name(v)), "f") == 0,
+          "define-alias: keeps original name 'f'");
+    Mshutdown();
+}
+
+static void test_set_lexical(void) {
+    Minit();
+    /* set! on a let-bound variable. */
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((x 1)) (begin (set! x 99) x))")) == 99,
+        "set!: lexical let-bound mutation");
+
+    /* set! on a lambda parameter. */
+    CHECK(Mfixnum_val(eval_str(
+        "((lambda (x) (begin (set! x 99) x)) 1)")) == 99,
+        "set!: lambda-param mutation");
+
+    /* set! returns #<void>. */
+    CHECK(Mvoidp(eval_str("(let ((x 1)) (set! x 2))")),
+          "set!: returns #<void>");
+
+    /* Inner set! doesn't affect outer same-named binding. */
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((x 1))"
+        "  (begin"
+        "    (let ((x 100)) (set! x 999))"
+        "    x))")) == 1,
+        "set!: inner shadow scope only");
+    Mshutdown();
+}
+
+static void test_set_top_level(void) {
+    Minit();
+    CHECK(Mfixnum_val(eval_seq("(define x 1) (set! x 99) x")) == 99,
+          "set!: top-level mutation");
+
+    /* set! falls through to top-level when no lexical match. */
+    CHECK(Mfixnum_val(eval_seq(
+        "(define g 0)"
+        "((lambda () (set! g 42)))"
+        "g")) == 42,
+        "set!: lambda mutates top-level via fallthrough");
+    Mshutdown();
+}
+
+static void test_set_unbound_error(void) {
+    Minit();
+    jmp_buf jmp;
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    int errored = 0;
+    if (setjmp(jmp) == 0) {
+        eval_str("(set! nonexistent 42)");
+    } else {
+        errored = 1;
+    }
+    minim_error_jmp = NULL;
+    CHECK(errored, "set!: unbound variable triggers Merror");
+    Mshutdown();
+}
+
+static void test_closure_state(void) {
+    Minit();
+    /* Counter pattern via captured set! — no `+` primitive needed
+     * because we just toggle a boolean. The closure carries a
+     * mutable `flag` cell across invocations. */
+    eval_seq(
+        "(define toggle"
+        "  (let ((flag #f))"
+        "    (lambda ()"
+        "      (begin"
+        "        (set! flag (if flag #f #t))"
+        "        flag))))");
+
+    CHECK(Mtruep(eval_str("(toggle)")),  "stateful closure: 1st → #t");
+    CHECK(Mfalsep(eval_str("(toggle)")), "stateful closure: 2nd → #f");
+    CHECK(Mtruep(eval_str("(toggle)")),  "stateful closure: 3rd → #t");
+
+    /* Two separate toggles have independent state. */
+    eval_seq(
+        "(define make-toggle"
+        "  (lambda ()"
+        "    (let ((flag #f))"
+        "      (lambda ()"
+        "        (begin"
+        "          (set! flag (if flag #f #t))"
+        "          flag)))))");
+    eval_seq("(define t1 (make-toggle)) (define t2 (make-toggle))");
+
+    CHECK(Mtruep(eval_str("(t1)")),  "two toggles: t1 1st → #t");
+    CHECK(Mtruep(eval_str("(t2)")),  "two toggles: t2 1st → #t (independent state)");
+    CHECK(Mfalsep(eval_str("(t1)")), "two toggles: t1 2nd → #f");
+    Mshutdown();
+}
+
 int main(void) {
     test_self_evaluating();
     test_quote();
@@ -485,6 +639,12 @@ int main(void) {
     test_higher_order();
     test_application_errors();
     test_lambda_many_args();
+    test_define_basic();
+    test_define_names_closure();
+    test_set_lexical();
+    test_set_top_level();
+    test_set_unbound_error();
+    test_closure_state();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

@@ -113,10 +113,11 @@ void Mwrite(mobj v, FILE *out) {
         return;
     case MTAG_IMMEDIATE:
         switch (v) {
-        case Mfalse: fputs("#f", out);     return;
-        case Mtrue:  fputs("#t", out);     return;
-        case Mnull:  fputs("()", out);     return;
-        case Meof:   fputs("#<eof>", out); return;
+        case Mfalse: fputs("#f", out);      return;
+        case Mtrue:  fputs("#t", out);      return;
+        case Mnull:  fputs("()", out);      return;
+        case Meof:   fputs("#<eof>", out);  return;
+        case Mvoid:  fputs("#<void>", out); return;
         default:     fputs("#<unknown-immediate>", out); return;
         }
     case MTAG_TYPED_OBJ: {
@@ -126,7 +127,6 @@ void Mwrite(mobj v, FILE *out) {
         case MSEC_KONT:   fputs("#<continuation>", out); return;
         case MSEC_ENV:    fputs("#<environment>", out); return;
         case MSEC_PRIM:   write_named_procedure(Mprim_name(v), out); return;
-        default:          fputs("#<unknown-typed>", out); return;
         }
     }
     }

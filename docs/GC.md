@@ -24,7 +24,7 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 | `011` | 0x3  | `MTAG_SYMBOL`     | heap base \| 3; 16-byte object (header + name ptr)     |
 | `100` | 0x4  | (reserved)        | unused; future string                                  |
 | `101` | 0x5  | `MTAG_CLOSURE`    | heap base \| 5; 32-byte object (4 mobj slots, no header) |
-| `110` | 0x6  | `MTAG_IMMEDIATE`  | constants: `#f=0x06`, `#t=0x0E`, `()=0x26`, `eof=0x36` |
+| `110` | 0x6  | `MTAG_IMMEDIATE`  | constants: `#f=0x06`, `#t=0x0E`, `()=0x26`, `void=0x2E`, `eof=0x36` |
 | `111` | 0x7  | `MTAG_TYPED_OBJ`  | heap base \| 7; first heap word is a secondary tag     |
 
 ### Why this layout
@@ -39,10 +39,12 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 ### Immediate values
 
 ```c
-#define Mfalse  ((mobj)0x06)   // 0000 0110
-#define Mtrue   ((mobj)0x0E)   // 0000 1110
-#define Mnull   ((mobj)0x26)   // 0010 0110
-#define Meof    ((mobj)0x36)   // 0011 0110
+#define Mimmediate(v)  ((mobj)((v << 3) | MTAG_IMMEDIATE))
+#define Mfalse  (Mimmediate(0x0))   // 0x06
+#define Mtrue   (Mimmediate(0x1))   // 0x0E
+#define Mnull   (Mimmediate(0x4))   // 0x26
+#define Mvoid   (Mimmediate(0x5))   // 0x2E   (unspecified-value sentinel)
+#define Meof    (Mimmediate(0x6))   // 0x36
 ```
 
 Predicate tricks worth keeping:

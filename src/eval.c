@@ -90,13 +90,22 @@ mobj eval_expr;
 mobj eval_env;
 mobj eval_kont;
 
+/* Top-level environment. Implemented as an alist of (sym . val)
+ * pairs, prepended to on each new top-level `define`. Linear lookup
+ * is fine for v1; a hash representation can drop in once it's worth
+ * the complexity. Lives on the GC heap and is registered as a single
+ * global root, so its entries' values are properly traced. */
+static mobj top_level_env;
+
 void eval_init(void) {
     eval_expr = Mnull;
     eval_env = Mnull;
     eval_kont = Mnull;
+    top_level_env = Mnull;
     minim_protect(&eval_expr);
     minim_protect(&eval_env);
     minim_protect(&eval_kont);
+    minim_protect(&top_level_env);
 }
 
 void eval_shutdown(void) {
@@ -104,14 +113,13 @@ void eval_shutdown(void) {
      * the next Minit cycle starts from a clean index space. */
     prim_fn_n = 0;
 
-    /* Reset the eval state slots and special-form symbol caches.
-     * gc_shutdown drops the global_roots array, so re-registration
-     * on the next Minit is correct. */
+    /* Reset the eval state slots. gc_shutdown drops the global_roots
+     * array, so re-registration on the next Minit is correct. The
+     * special-form symbols are reset by symbol_shutdown. */
     eval_expr = 0;
     eval_env = 0;
     eval_kont = 0;
-    if_sym = 0;
-    begin_sym = 0;
+    top_level_env = 0;
 }
 
 /* ======================================================================
@@ -122,10 +130,50 @@ static bool is_self_evaluating(mobj v) {
     return Mfixnump(v) || Mflonump(v) || Mimmediatep(v) || Mvectorp(v);
 }
 
+/* Top-level env helpers. The environment is an alist of (sym . val)
+ * pairs prepended to on each new define; lookup is O(n) and that's
+ * fine until performance matters. None of these helpers allocate
+ * unless `top_env_define` needs to prepend a new entry. */
+
+static bool top_env_lookup(mobj sym, mobj *out) {
+    for (mobj p = top_level_env; Mpairp(p); p = Mcdr(p)) {
+        mobj entry = Mcar(p);
+        if (Mcar(entry) == sym) {
+            *out = Mcdr(entry);
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool top_env_set(mobj sym, mobj val) {
+    for (mobj p = top_level_env; Mpairp(p); p = Mcdr(p)) {
+        mobj entry = Mcar(p);
+        if (Mcar(entry) == sym) {
+            Mset_cdr(entry, val);
+            return true;
+        }
+    }
+    return false;
+}
+
+static void top_env_define(mobj sym, mobj val) {
+    /* Replace existing or prepend a fresh entry. Mcons can run a GC
+     * so sym/val must be protected. */
+    if (top_env_set(sym, val)) return;
+    MINIM_GC_FRAME_BEGIN;
+    MINIM_GC_PROTECT(sym);
+    MINIM_GC_PROTECT(val);
+    mobj entry = Mcons(sym, val);
+    MINIM_GC_PROTECT(entry);
+    top_level_env = Mcons(entry, top_level_env);
+    MINIM_GC_FRAME_END;
+}
+
 /* Walk the lexical-env chain looking for `sym` in each rib. Each rib
  * is a vector laid out as [name0 val0 name1 val1 ...]; we scan
- * linearly. Top-level lookup falls through to Merror until Phase 5
- * lands the global env. */
+ * linearly. Top-level fallthrough handles globals defined via
+ * (define ...). */
 static mobj env_lookup(mobj env, mobj sym) {
     while (Menvp(env)) {
         mobj rib = Menv_rib(env);
@@ -135,13 +183,16 @@ static mobj env_lookup(mobj env, mobj sym) {
         }
         env = Menv_parent(env);
     }
+    mobj val;
+    if (top_env_lookup(sym, &val)) return val;
     Merror("unbound variable: %s", Msymbol_name(sym));
     return Mnull; /* unreachable */
 }
 
 /* Walk the chain looking for `sym` and mutate its slot. Returns true
- * if found, false otherwise. (Used by `set!` once Phase 5 lands; kept
- * here so the lookup/mutate pair lives together.) */
+ * if found, false otherwise. Used by `set!` to update the innermost
+ * lexical binding; on failure, the caller falls through to the
+ * top-level env. */
 static bool env_set(mobj env, mobj sym, mobj val) {
     while (Menvp(env)) {
         mobj rib = Menv_rib(env);
@@ -257,6 +308,36 @@ static void step_eval(void) {
             }
             eval_expr = Mclosure(params, body, eval_env, Mfalse);
             eval_mode = APPLY_MODE;
+            return;
+        }
+
+        if (head == define_sym) {
+            /* (define name value-expr). Phase 5 supports top-level
+             * defines only — internal defines (R7RS body-position)
+             * arrive in a later pass that desugars them to letrec*.
+             *
+             * Push KONT_DEFINE carrying the target name; then EVAL
+             * the value expression. APPLY hooks into the closure
+             * name slot if the value turns out to be an anonymous
+             * closure, then mutates the top-level env. */
+            if (list_length(rest) != 2) Merror("malformed define");
+            mobj name = Mcar(rest);
+            if (!Msymbolp(name)) Merror("define: name must be a symbol");
+            eval_expr = Mcar(Mcdr(rest));
+            eval_kont = Mkont_define(eval_kont, eval_env, name);
+            return;
+        }
+
+        if (head == set_sym) {
+            /* (set! name value-expr). Push KONT_SET carrying the
+             * name; EVAL the value; APPLY mutates the innermost
+             * lexical binding, falling through to the top-level
+             * env on miss. */
+            if (list_length(rest) != 2) Merror("malformed set!");
+            mobj name = Mcar(rest);
+            if (!Msymbolp(name)) Merror("set!: name must be a symbol");
+            eval_expr = Mcar(Mcdr(rest));
+            eval_kont = Mkont_set(eval_kont, eval_env, name);
             return;
         }
 
@@ -496,6 +577,65 @@ static void step_apply(void) {
         }
         /* Merror longjmps; not reached. */
         MINIM_GC_FRAME_END;
+        return;
+    }
+
+    if (kind == KONT_DEFINE) {
+        /* The just-arrived value is what `name` should be bound to
+         * at top level. If it's an anonymous closure, fill in its
+         * name slot for nicer printing. */
+        MINIM_GC_FRAME_BEGIN;
+        mobj parent = Mnull, saved_env = Mnull, name = Mnull, value = Mnull;
+        MINIM_GC_PROTECT(parent);
+        MINIM_GC_PROTECT(saved_env);
+        MINIM_GC_PROTECT(name);
+        MINIM_GC_PROTECT(value);
+
+        parent = Mkont_parent(k);
+        saved_env = Mkont_env(k);
+        name = Mtyped_obj_ref(k, 3);
+        value = eval_expr;
+
+        if (Mclosurep(value) && Mfalsep(Mclosure_name(value))) {
+            Mclosure_set_name(value, name);
+        }
+        top_env_define(name, value);
+
+        eval_env = saved_env;
+        eval_kont = parent;
+        eval_expr = Mvoid;
+        MINIM_GC_FRAME_END;
+        eval_mode = APPLY_MODE;
+        return;
+    }
+
+    if (kind == KONT_SET) {
+        /* The just-arrived value is the new value for the binding
+         * named in slot 3. Try lexical first; on miss, fall through
+         * to the top-level env. Truly unbound is an error. */
+        MINIM_GC_FRAME_BEGIN;
+        mobj parent = Mnull, saved_env = Mnull, name = Mnull, value = Mnull;
+        MINIM_GC_PROTECT(parent);
+        MINIM_GC_PROTECT(saved_env);
+        MINIM_GC_PROTECT(name);
+        MINIM_GC_PROTECT(value);
+
+        parent = Mkont_parent(k);
+        saved_env = Mkont_env(k);
+        name = Mtyped_obj_ref(k, 3);
+        value = eval_expr;
+
+        if (!env_set(saved_env, name, value)) {
+            if (!top_env_set(name, value)) {
+                Merror("set!: unbound variable: %s", Msymbol_name(name));
+            }
+        }
+
+        eval_env = saved_env;
+        eval_kont = parent;
+        eval_expr = Mvoid;
+        MINIM_GC_FRAME_END;
+        eval_mode = APPLY_MODE;
         return;
     }
 
