@@ -568,6 +568,56 @@ static void test_set_top_level(void) {
     Mshutdown();
 }
 
+static void test_internal_define_rejected(void) {
+    Minit();
+    /* Internal define is deferred until proper letrec*-style
+     * desugaring lands. Until then, any non-top-level `define`
+     * should raise an error rather than silently mutating the
+     * top-level env. */
+    jmp_buf jmp;
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+
+    int e1 = 0;
+    if (setjmp(jmp) == 0) eval_str("(let ((x 1)) (define x 2) x)");
+    else e1 = 1;
+
+    int e2 = 0;
+    if (setjmp(jmp) == 0) eval_str("((lambda () (define y 7) y))");
+    else e2 = 1;
+
+    minim_error_jmp = NULL;
+    CHECK(e1, "internal define inside let body errors");
+    CHECK(e2, "internal define inside lambda body errors");
+
+    /* But top-level inside a `begin` is still fine. */
+    CHECK(Mfixnum_val(eval_seq("(begin (define z 5) z)")) == 5,
+          "begin at top level: define still works");
+    Mshutdown();
+}
+
+static void test_empty_list_is_error(void) {
+    Minit();
+    /* Bare `()` is not an expression — must be quoted. */
+    jmp_buf jmp;
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    int errored = 0;
+    if (setjmp(jmp) == 0) {
+        eval_str("()");
+    } else {
+        errored = 1;
+    }
+    minim_error_jmp = NULL;
+    CHECK(errored, "empty list as expression triggers Merror");
+
+    /* But `'()` (quoted) still works. */
+    CHECK(Mnullp(eval_str("'()")), "quoted empty list still evaluates to ()");
+    CHECK(Mnullp(eval_str("(quote ())")),
+          "(quote ()) still evaluates to ()");
+    Mshutdown();
+}
+
 static void test_set_unbound_error(void) {
     Minit();
     jmp_buf jmp;
@@ -645,6 +695,8 @@ int main(void) {
     test_set_top_level();
     test_set_unbound_error();
     test_closure_state();
+    test_internal_define_rejected();
+    test_empty_list_is_error();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

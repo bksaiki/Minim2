@@ -228,6 +228,14 @@ static void step_eval(void) {
 
     /* Self-evaluating literals: numbers, vectors, immediates. */
     if (is_self_evaluating(expr)) {
+        /* Bare `()` is a syntax error per R7RS — the empty-list datum
+         * must be quoted to flow as a value. Check this before the
+         * self-evaluating arm, since Mnull's primary tag is
+         * MTAG_IMMEDIATE and would otherwise pass that test. */
+        if (Mnullp(expr)) {
+            Merror("cannot evaluate empty list (use '() for the literal)");
+        }
+
         eval_mode = APPLY_MODE;
         return;
     }
@@ -316,10 +324,17 @@ static void step_eval(void) {
              * defines only — internal defines (R7RS body-position)
              * arrive in a later pass that desugars them to letrec*.
              *
-             * Push KONT_DEFINE carrying the target name; then EVAL
-             * the value expression. APPLY hooks into the closure
-             * name slot if the value turns out to be an anonymous
-             * closure, then mutates the top-level env. */
+             * Reject internal defines explicitly: silently mutating
+             * the top-level env when the user clearly meant a body-
+             * local binding is worse than an error. We detect "we're
+             * at top level" by `eval_env` being Mnull — every let /
+             * lambda / let-style form extends the env to an Menvp
+             * frame, so anything that has been entered shows up as
+             * non-null here. */
+            if (Menvp(eval_env)) {
+                Merror("internal define not supported yet "
+                       "(only top-level define is implemented)");
+            }
             if (list_length(rest) != 2) Merror("malformed define");
             mobj name = Mcar(rest);
             if (!Msymbolp(name)) Merror("define: name must be a symbol");

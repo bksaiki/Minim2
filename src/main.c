@@ -49,9 +49,11 @@ int main(void) {
         if (Meofp(expr)) break;
 
         mobj value = Meval(expr);
-        Mwrite(value, stdout);
-        fputc('\n', stdout);
-        fflush(stdout);
+        if (!Mvoidp(value)) {
+            Mwrite(value, stdout);
+            fputc('\n', stdout);
+            fflush(stdout);
+        }
     }
 
     minim_error_jmp = NULL;
