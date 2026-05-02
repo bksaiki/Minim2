@@ -406,32 +406,6 @@ static void test_prim_survives_gc(void) {
     Mshutdown();
 }
 
-static void test_cont_survives_gc(void) {
-    Minit();
-    MINIM_GC_FRAME_BEGIN;
-    mobj halt = Mnull, k_if = Mnull, cont = Mnull;
-    MINIM_GC_PROTECT(halt);
-    MINIM_GC_PROTECT(k_if);
-    MINIM_GC_PROTECT(cont);
-
-    halt = Mkont(KONT_HALT, Mnull, Mnull, 0);
-    k_if = Mkont_if(halt, Mnull, Mfixnum(1), Mfixnum(2));
-    cont = Mcont(k_if);
-
-    gc_collect(0);
-
-    CHECK(Mcontp(cont), "cont: predicate after GC");
-    mobj inner = Mcont_kont(cont);
-    CHECK(Mkontp(inner), "cont: wrapped kont survived");
-    CHECK(Mfixnum_val(Mkont_kind(inner)) == 1, "cont: wrapped kind preserved");
-    CHECK(Mkontp(Mkont_parent(inner)), "cont: parent chain survived");
-    CHECK(Mfixnum_val(Mkont_kind(Mkont_parent(inner))) == 0,
-          "cont: bottom of chain still halt");
-
-    MINIM_GC_FRAME_END;
-    Mshutdown();
-}
-
 int main(void) {
     test_cons_survives_gc();
     test_vector_survives_gc();
@@ -443,7 +417,6 @@ int main(void) {
     test_env_survives_gc();
     test_kont_survives_gc();
     test_prim_survives_gc();
-    test_cont_survives_gc();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

@@ -57,10 +57,9 @@ typedef unsigned char mbyte;
  * secondary tag here — calling a procedure is the hottest path in a
  * Scheme runtime, so the predicate cost should be one instruction. */
 #define MSEC_VECTOR     ((mobj)0x0)
-#define MSEC_KONT       ((mobj)0x1)  /* spaghetti-stack frame */
-#define MSEC_ENV        ((mobj)0x3)  /* lexical environment frame */
-#define MSEC_PRIM       ((mobj)0x4)  /* built-in procedure */
-#define MSEC_CONT       ((mobj)0x5)  /* first-class captured continuation */
+#define MSEC_KONT       ((mobj)0x1)  /* continuation frame */
+#define MSEC_ENV        ((mobj)0x2)  /* lexical environment frame */
+#define MSEC_PRIM       ((mobj)0x3)  /* built-in procedure */
 #define MSEC_MASK       ((mobj)0xF)
 
 /* Continuation frame kinds, stored as a fixnum in slot 0 of an
@@ -119,28 +118,23 @@ static inline bool Mflonump(mobj v) {
 static inline bool Msymbolp(mobj v) {
     return (v & MTAG_MASK) == MTAG_SYMBOL;
 }
-static inline bool Mvectorp(mobj v) {
-    if ((v & MTAG_MASK) != MTAG_TYPED_OBJ) {
-        return false;
-    }
 
-    mobj header = *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ));
-    return (header & MSEC_MASK) == MSEC_VECTOR;
-}
-
-static inline bool Mhas_secondary(mobj v, mobj sec) {
+static inline bool _Mhas_secondary(mobj v, mobj sec) {
     if ((v & MTAG_MASK) != MTAG_TYPED_OBJ) return false;
     mobj header = *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ));
     return (header & MSEC_MASK) == sec;
 }
 
+static inline bool Mvectorp(mobj v)  { return _Mhas_secondary(v, MSEC_VECTOR); }
 static inline bool Mclosurep(mobj v) { return (v & MTAG_MASK) == MTAG_CLOSURE; }
-static inline bool Menvp(mobj v)     { return Mhas_secondary(v, MSEC_ENV); }
-static inline bool Mkontp(mobj v)    { return Mhas_secondary(v, MSEC_KONT); }
-static inline bool Mprimp(mobj v)    { return Mhas_secondary(v, MSEC_PRIM); }
-static inline bool Mcontp(mobj v)    { return Mhas_secondary(v, MSEC_CONT); }
+static inline bool Menvp(mobj v)     { return _Mhas_secondary(v, MSEC_ENV); }
+static inline bool Mkontp(mobj v)    { return _Mhas_secondary(v, MSEC_KONT); }
+static inline bool Mprimp(mobj v)    { return _Mhas_secondary(v, MSEC_PRIM); }
 static inline bool Mprocedurep(mobj v) {
-    return Mclosurep(v) || Mprimp(v) || Mcontp(v);
+    /* Konts are first-class procedures: invoking one is what
+     * `call/cc` hands back to the user — restore the saved chain
+     * and continue with the supplied value. */
+    return Mclosurep(v) || Mprimp(v) || Mkontp(v);
 }
 
 /* ----------------------------------------------------------------------
@@ -203,8 +197,6 @@ static inline mobj Mprim_name(mobj v)      { return Mtyped_obj_ref(v, 0); }
 static inline mobj Mprim_arity_min(mobj v) { return Mtyped_obj_ref(v, 1); }
 static inline mobj Mprim_arity_max(mobj v) { return Mtyped_obj_ref(v, 2); }
 
-static inline mobj Mcont_kont(mobj v)      { return Mtyped_obj_ref(v, 0); }
-
 /* ----------------------------------------------------------------------
  * Mutators
  * -------------------------------------------------------------------- */
@@ -221,6 +213,10 @@ static inline void Mvector_set(mobj v, size_t i, mobj x) {
 static inline void Mtyped_obj_set(mobj v, size_t i, mobj x) {
     *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i) = x;
 }
+static inline void Mclosure_set_params(mobj v, mobj x) { Mclosure_slots(v)[0] = x; }
+static inline void Mclosure_set_body(mobj v, mobj x)   { Mclosure_slots(v)[1] = x; }
+static inline void Mclosure_set_env(mobj v, mobj x)    { Mclosure_slots(v)[2] = x; }
+static inline void Mclosure_set_name(mobj v, mobj x)   { Mclosure_slots(v)[3] = x; }
 static inline const char *Msymbol_name(mobj v) {
     return *(const char **)((uintptr_t)v - MTAG_SYMBOL + 8);
 }
@@ -261,8 +257,6 @@ mobj Mkont_define(mobj parent, mobj env, mobj name);
 typedef mobj (*Mprim_fn)(mobj args);
 mobj Mprim(const char *name, Mprim_fn fn, intptr_t arity_min, intptr_t arity_max);
 Mprim_fn Mprim_fn_of(mobj v);
-
-mobj Mcont(mobj kont);
 
 /* ----------------------------------------------------------------------
  * System

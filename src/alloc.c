@@ -34,6 +34,33 @@ mobj Mflonum(double d) {
 }
 
 /* ----------------------------------------------------------------------
+ * Closure: tag=0x5, 4 fixed slots [params, body, env, name].
+ *
+ * Modeled on Chez's `closure_disp_*` layout — closures get their own
+ * primary tag because procedure application is the hottest path in
+ * the runtime. No header word: the size is implied by the tag and is
+ * fixed at MINIM_CLOSURE_SIZE bytes. The GC's forward-marker scheme
+ * uses the first two slots (params/body) of the old location during
+ * a copy, just like pairs.
+ * -------------------------------------------------------------------- */
+
+mobj Mclosure(mobj params, mobj body, mobj env, mobj name) {
+    MINIM_GC_FRAME_BEGIN;
+    MINIM_GC_PROTECT(params);
+    MINIM_GC_PROTECT(body);
+    MINIM_GC_PROTECT(env);
+    MINIM_GC_PROTECT(name);
+    char *p = gc_alloc(MINIM_CLOSURE_SIZE);
+    mobj v = (mobj)((uintptr_t)p | MTAG_CLOSURE);
+    Mclosure_set_params(v, params);
+    Mclosure_set_body(v, body);
+    Mclosure_set_env(v, env);
+    Mclosure_set_name(v, name);
+    MINIM_GC_FRAME_END;
+    return v;
+}
+
+/* ----------------------------------------------------------------------
  * Generic typed-object allocation: tag=0x7
  *
  * Every typed-object kind below shares the same on-heap shape:
@@ -73,32 +100,6 @@ mobj Mvector(size_t length, mobj fill) {
         slots[i] = fill;
     MINIM_GC_FRAME_END;
     return (mobj)((uintptr_t)p | MTAG_TYPED_OBJ);
-}
-
-/* ----------------------------------------------------------------------
- * Closure: tag=0x5, 4 fixed slots [params, body, env, name].
- *
- * Modeled on Chez's `closure_disp_*` layout — closures get their own
- * primary tag because procedure application is the hottest path in
- * the runtime. No header word: the size is implied by the tag and is
- * fixed at MINIM_CLOSURE_SIZE bytes. The GC's forward-marker scheme
- * uses the first two slots (params/body) of the old location during
- * a copy, just like pairs.
- * -------------------------------------------------------------------- */
-
-mobj Mclosure(mobj params, mobj body, mobj env, mobj name) {
-    MINIM_GC_FRAME_BEGIN;
-    MINIM_GC_PROTECT(params);
-    MINIM_GC_PROTECT(body);
-    MINIM_GC_PROTECT(env);
-    MINIM_GC_PROTECT(name);
-    char *p = gc_alloc(MINIM_CLOSURE_SIZE);
-    ((mobj *)p)[0] = params;
-    ((mobj *)p)[1] = body;
-    ((mobj *)p)[2] = env;
-    ((mobj *)p)[3] = name;
-    MINIM_GC_FRAME_END;
-    return (mobj)((uintptr_t)p | MTAG_CLOSURE);
 }
 
 /* ----------------------------------------------------------------------
@@ -212,15 +213,3 @@ mobj Mprim(const char *name, Mprim_fn fn, intptr_t arity_min, intptr_t arity_max
     return v;
 }
 
-/* ----------------------------------------------------------------------
- * Captured continuation: tag=0x7, 1 slot [kont]
- * -------------------------------------------------------------------- */
-
-mobj Mcont(mobj kont) {
-    MINIM_GC_FRAME_BEGIN;
-    MINIM_GC_PROTECT(kont);
-    mobj v = typed_alloc(1, MSEC_CONT);
-    Mtyped_obj_set(v, 0, kont);
-    MINIM_GC_FRAME_END;
-    return v;
-}
