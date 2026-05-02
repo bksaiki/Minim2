@@ -1,6 +1,7 @@
 #include "minim.h"
 #include "harness.h"
 
+#include <setjmp.h>
 #include <string.h>
 
 /* ----------------------------------------------------------------------
@@ -161,6 +162,129 @@ static void test_deep_if(void) {
     Mshutdown();
 }
 
+/* ----------------------------------------------------------------------
+ * Phase 3 — environments and `let`
+ * -------------------------------------------------------------------- */
+
+static void test_let_basic(void) {
+    Minit();
+    /* Single binding. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) x)")) == 1,
+          "let: (let ((x 1)) x) = 1");
+
+    /* Multiple bindings, last wins as result via tail `begin`. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 1) (y 2)) y)")) == 2,
+          "let: (let ((x 1) (y 2)) y) = 2");
+    CHECK(Mfixnum_val(eval_str("(let ((x 1) (y 2)) x)")) == 1,
+          "let: (let ((x 1) (y 2)) x) = 1");
+
+    /* Empty bindings. */
+    CHECK(Mfixnum_val(eval_str("(let () 42)")) == 42, "let: empty bindings");
+
+    /* Body is implicit begin; non-tail values discarded. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) 99 100 x)")) == 1,
+          "let: body is implicit begin; tail value wins");
+
+    /* Inits evaluated left-to-right in the *outer* env, not in the
+     * let's own scope. (Phase 3 has no symbol the inner init could
+     * reference, but the structural check still matters: y's init
+     * doesn't see x.) Verified with constants. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 10) (y 20)) y)")) == 20,
+          "let: parallel bindings, second wins as tail");
+    Mshutdown();
+}
+
+static void test_let_inits(void) {
+    Minit();
+    /* Init expressions are themselves evaluated. */
+    CHECK(Mfixnum_val(eval_str("(let ((x (if #t 7 8))) x)")) == 7,
+          "let: init uses if");
+    CHECK(Mfixnum_val(eval_str("(let ((x (begin 1 2 3))) x)")) == 3,
+          "let: init uses begin");
+
+    /* Quoted-list init. */
+    mobj v = eval_str("(let ((x (quote (a b c)))) x)");
+    CHECK(Mpairp(v) && Msymbolp(Mcar(v)) &&
+          strcmp(Msymbol_name(Mcar(v)), "a") == 0,
+          "let: init is a quoted list");
+    Mshutdown();
+}
+
+static void test_let_nested(void) {
+    Minit();
+    /* Inner let's body sees outer binding via parent walk. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) (let ((y 2)) x))")) == 1,
+          "let: inner sees outer x");
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) (let ((y 2)) y))")) == 2,
+          "let: inner y resolves locally");
+
+    /* Shadowing: inner x hides outer x. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) (let ((x 2)) x))")) == 2,
+          "let: inner shadows outer");
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) (let ((x 2)) (let ((x 3)) x)))")) == 3,
+          "let: 3-deep shadowing resolves to innermost");
+
+    /* Body of an outer let after returning from inner: outer binding
+     * is still visible. */
+    CHECK(Mfixnum_val(eval_str(
+        "(let ((x 1)) (begin (let ((x 99)) x) x))")) == 1,
+          "let: outer x intact after inner let returns");
+    Mshutdown();
+}
+
+static void test_let_in_if(void) {
+    Minit();
+    /* let inside an if branch. */
+    CHECK(Mfixnum_val(eval_str("(if #t (let ((x 5)) x) 99)")) == 5,
+          "let: as true branch");
+    CHECK(Mfixnum_val(eval_str("(if #f 99 (let ((x 6)) x))")) == 6,
+          "let: as false branch");
+
+    /* if inside a let body. */
+    CHECK(Mfixnum_val(eval_str("(let ((x 1)) (if #t x 99))")) == 1,
+          "let: body uses bound var in if test result");
+    Mshutdown();
+}
+
+static void test_let_unbound_error(void) {
+    Minit();
+    /* A let that doesn't bind `y` and references it should produce
+     * the standard unbound-variable error. The REPL recovers via
+     * Merror; here we install a setjmp handler manually so the test
+     * can verify the path without aborting. */
+    jmp_buf jmp;
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    int errored = 0;
+    if (setjmp(jmp) == 0) {
+        eval_str("(let ((x 1)) y)");
+    } else {
+        errored = 1;
+    }
+    minim_error_jmp = NULL;
+    CHECK(errored, "let: reference to unbound symbol triggers Merror");
+    Mshutdown();
+}
+
+static void test_let_many(void) {
+    Minit();
+    /* Many bindings; the rib walk and KONT_LET advance each work
+     * correctly. The tail is the very-last variable, so its value
+     * propagates out. Stress mode exercises the protect frame in
+     * step_apply's KONT_LET branch — every binding triggers a
+     * Mcons + later Mvector + Menv_extend. */
+    char buf[2048];
+    size_t pos = 0;
+    pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, "(let (");
+    for (int i = 0; i < 50; i++)
+        pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, " (v%d %d)", i, i);
+    pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, ") v49)");
+    mobj v = eval_str(buf);
+    CHECK(Mfixnump(v) && Mfixnum_val(v) == 49,
+          "let: 50-binding form, tail var resolves to its init");
+    Mshutdown();
+}
+
 int main(void) {
     test_self_evaluating();
     test_quote();
@@ -169,6 +293,12 @@ int main(void) {
     test_nested();
     test_deep_begin();
     test_deep_if();
+    test_let_basic();
+    test_let_inits();
+    test_let_nested();
+    test_let_in_if();
+    test_let_unbound_error();
+    test_let_many();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

@@ -186,6 +186,27 @@ mobj Mkont_define(mobj parent, mobj env, mobj name) {
     return v;
 }
 
+/* let-binding frame. `pending` is a Scheme list of `(var init)` pairs
+ * still to evaluate, head-first; the head is the binding currently
+ * being evaluated. `evald` is a list of `(var . val)` pairs already
+ * computed, in reverse order (most recent first). `body` is the body
+ * expression list, evaluated as implicit `begin` once all bindings
+ * are done. */
+mobj Mkont_let(mobj parent, mobj env, mobj pending, mobj evald, mobj body) {
+    MINIM_GC_FRAME_BEGIN;
+    MINIM_GC_PROTECT(parent);
+    MINIM_GC_PROTECT(env);
+    MINIM_GC_PROTECT(pending);
+    MINIM_GC_PROTECT(evald);
+    MINIM_GC_PROTECT(body);
+    mobj v = Mkont(KONT_LET, parent, env, 3);
+    Mtyped_obj_set(v, 3, pending);
+    Mtyped_obj_set(v, 4, evald);
+    Mtyped_obj_set(v, 5, body);
+    MINIM_GC_FRAME_END;
+    return v;
+}
+
 /* ----------------------------------------------------------------------
  * Primitive procedure: tag=0x7, 4 slots [name-symbol, arity-min, arity-max,
  * fn-table-index].

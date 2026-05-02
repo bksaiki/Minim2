@@ -122,12 +122,39 @@ static bool is_self_evaluating(mobj v) {
     return Mfixnump(v) || Mflonump(v) || Mimmediatep(v) || Mvectorp(v);
 }
 
+/* Walk the lexical-env chain looking for `sym` in each rib. Each rib
+ * is a vector laid out as [name0 val0 name1 val1 ...]; we scan
+ * linearly. Top-level lookup falls through to Merror until Phase 5
+ * lands the global env. */
 static mobj env_lookup(mobj env, mobj sym) {
-    /* Phase 2 has no bindings yet — every lookup is unbound. Lambda
-     * and define land in Phases 3-4 and will fill in this routine. */
-    (void)env;
+    while (Menvp(env)) {
+        mobj rib = Menv_rib(env);
+        size_t len = Mvector_length(rib);
+        for (size_t i = 0; i < len; i += 2) {
+            if (Mvector_ref(rib, i) == sym) return Mvector_ref(rib, i + 1);
+        }
+        env = Menv_parent(env);
+    }
     Merror("unbound variable: %s", Msymbol_name(sym));
     return Mnull; /* unreachable */
+}
+
+/* Walk the chain looking for `sym` and mutate its slot. Returns true
+ * if found, false otherwise. (Used by `set!` once Phase 5 lands; kept
+ * here so the lookup/mutate pair lives together.) */
+static bool env_set(mobj env, mobj sym, mobj val) {
+    while (Menvp(env)) {
+        mobj rib = Menv_rib(env);
+        size_t len = Mvector_length(rib);
+        for (size_t i = 0; i < len; i += 2) {
+            if (Mvector_ref(rib, i) == sym) {
+                Mvector_set(rib, i + 1, val);
+                return true;
+            }
+        }
+        env = Menv_parent(env);
+    }
+    return false;
 }
 
 /* Length of a proper list, for arity checks on special forms. Errors
@@ -212,6 +239,44 @@ static void step_eval(void) {
             return;
         }
 
+        if (head == let_sym) {
+            /* (let ((var0 init0) ...) body ...). Evaluate inits
+             * left-to-right in the *current* env. Once all are
+             * collected, build a rib `[var0 v0 ...]`, extend env,
+             * and run the body as implicit `begin` in tail position.
+             *
+             * The KONT_LET frame keeps the still-pending bindings at
+             * its head so APPLY can pair the just-arrived value with
+             * the current var. The body lives in the frame too. */
+            if (list_length(rest) < 2) Merror("malformed let");
+            mobj bindings = Mcar(rest);
+            mobj body = Mcdr(rest);
+            if (!Mnullp(bindings) && !Mpairp(bindings))
+                Merror("let: bindings must be a list");
+            for (mobj b = bindings; Mpairp(b); b = Mcdr(b)) {
+                mobj binding = Mcar(b);
+                if (list_length(binding) != 2)
+                    Merror("let: each binding must be (var init)");
+                if (!Msymbolp(Mcar(binding)))
+                    Merror("let: binding name must be a symbol");
+            }
+
+            if (Mnullp(bindings)) {
+                /* (let () body ...) — degenerate: run body in current env. */
+                eval_expr = Mcar(body);
+                if (Mpairp(Mcdr(body))) {
+                    eval_kont = Mkont_seq(eval_kont, eval_env, Mcdr(body));
+                }
+                return;
+            }
+
+            /* Push KONT_LET, then eval the first binding's init.
+             * Discipline: assign eval_expr before Mkont_let allocates. */
+            eval_expr = Mcar(Mcdr(Mcar(bindings)));
+            eval_kont = Mkont_let(eval_kont, eval_env, bindings, Mnull, body);
+            return;
+        }
+
         /* Unrecognized compound form. Procedure application lands in
          * Phase 3; for now this is a recoverable user error. */
         Merror("procedure application not supported in v0");
@@ -279,6 +344,86 @@ static void step_apply(void) {
             eval_env = Mkont_env(k);
         }
         eval_expr = first;
+        eval_mode = EVAL_MODE;
+        return;
+    }
+
+    if (kind == KONT_LET) {
+        /* The just-arrived value is val of the binding at head of the
+         * frame's `pending` list. Pair it with that var, prepend to
+         * `evald`, and either advance to the next init or build the
+         * rib + extend env + run body.
+         *
+         * Discipline: this branch allocates several times (Mcons for
+         * the new evald entry, Mvector for the rib, Menv_extend, and
+         * possibly Mkont_seq). Snapshot every kont field into
+         * protected locals up front; after that the bare `k` C local
+         * becomes irrelevant since we use `eval_kont` (the registered
+         * global) for any further frame access. */
+        MINIM_GC_FRAME_BEGIN;
+        mobj pending = Mnull, evald = Mnull, body = Mnull;
+        mobj parent = Mnull, saved_env = Mnull;
+        mobj value = Mnull, var = Mnull, rest_pending = Mnull;
+        mobj rib = Mnull, new_pair = Mnull;
+        MINIM_GC_PROTECT(pending);
+        MINIM_GC_PROTECT(evald);
+        MINIM_GC_PROTECT(body);
+        MINIM_GC_PROTECT(parent);
+        MINIM_GC_PROTECT(saved_env);
+        MINIM_GC_PROTECT(value);
+        MINIM_GC_PROTECT(var);
+        MINIM_GC_PROTECT(rest_pending);
+        MINIM_GC_PROTECT(rib);
+        MINIM_GC_PROTECT(new_pair);
+
+        pending = Mtyped_obj_ref(k, 3);
+        evald   = Mtyped_obj_ref(k, 4);
+        body    = Mtyped_obj_ref(k, 5);
+        parent  = Mkont_parent(k);
+        saved_env = Mkont_env(k);
+        value   = eval_expr;
+
+        var = Mcar(Mcar(pending));
+        rest_pending = Mcdr(pending);
+
+        if (Mnullp(rest_pending)) {
+            /* Final binding — build rib including (var, value) and
+             * every (var . val) pair already in `evald`. Then extend
+             * the let-time env, pop the frame, and run the body. */
+            size_t count = 1;
+            for (mobj e = evald; Mpairp(e); e = Mcdr(e)) count++;
+            rib = Mvector(2 * count, Mfalse);
+            Mvector_set(rib, 0, var);
+            Mvector_set(rib, 1, value);
+            size_t i = 2;
+            for (mobj e = evald; Mpairp(e); e = Mcdr(e), i += 2) {
+                mobj p = Mcar(e);
+                Mvector_set(rib, i,     Mcar(p));
+                Mvector_set(rib, i + 1, Mcdr(p));
+            }
+            eval_env = Menv_extend(rib, saved_env);
+            eval_kont = parent; /* pop */
+            /* Run body as implicit begin (in tail position). */
+            eval_expr = Mcar(body);
+            mobj more = Mcdr(body);
+            if (Mpairp(more)) {
+                eval_kont = Mkont_seq(eval_kont, eval_env, more);
+            }
+        } else {
+            /* More bindings to evaluate. Save (var . value) on
+             * `evald`, advance `pending`, and EVAL the next init in
+             * the let-time env. eval_kont still points at the same
+             * frame (we haven't popped), so we update its slots
+             * through eval_kont rather than the stale C local k. */
+            new_pair = Mcons(var, value);
+            evald = Mcons(new_pair, evald);
+            Mtyped_obj_set(eval_kont, 3, rest_pending);
+            Mtyped_obj_set(eval_kont, 4, evald);
+            eval_env = saved_env;
+            eval_expr = Mcar(Mcdr(Mcar(rest_pending)));
+        }
+
+        MINIM_GC_FRAME_END;
         eval_mode = EVAL_MODE;
         return;
     }

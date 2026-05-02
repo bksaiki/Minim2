@@ -75,6 +75,7 @@ typedef unsigned char mbyte;
 #define KONT_SET        ((mobj)(4 << 3))
 #define KONT_DEFINE     ((mobj)(5 << 3))
 #define KONT_EXC        ((mobj)(6 << 3))
+#define KONT_LET        ((mobj)(7 << 3))
 
 /* Forwarding marker written into the first word of a copied object during GC */
 #define MFORWARD_MARKER ((mobj)0x3E)
@@ -256,6 +257,7 @@ mobj Mkont_seq(mobj parent, mobj env, mobj rest);
 mobj Mkont_app(mobj parent, mobj env, mobj unev, mobj evald);
 mobj Mkont_set(mobj parent, mobj env, mobj name);
 mobj Mkont_define(mobj parent, mobj env, mobj name);
+mobj Mkont_let(mobj parent, mobj env, mobj pending, mobj evald, mobj body);
 
 /* Function pointer for a primitive procedure. Receives the
  * already-evaluated argument list as a Scheme list and returns one
@@ -350,6 +352,7 @@ void Mwrite(mobj v, FILE *out);
 
 extern mobj begin_sym;
 extern mobj if_sym;
+extern mobj let_sym;
 extern mobj quote_sym;
 
 /* ----------------------------------------------------------------------
