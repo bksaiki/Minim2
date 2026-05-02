@@ -48,60 +48,45 @@ multi-word encoding.
 
 ## Phase 1 — runtime representation
 
-- [ ] Add the three `Mchar` / `Mcharp` / `Mchar_val` definitions to
-      `include/minim.h` next to the existing immediates. The
-      `mchar` typedef already exists (`unsigned int`).
-- [ ] Confirm `is_self_evaluating` already covers chars via the
-      `Mimmediatep` arm — no change expected.
-- [ ] Confirm `minim_is_leaf` (in `src/gc.c`) already returns true
-      for chars — no change expected.
-- [ ] Tests in `tests/test_tags.c`:
-      - `Mchar(c)` round-trip via `Mchar_val` for codepoints
-        spanning ASCII printables, control characters, and a
-        non-ASCII codepoint (e.g. 0x1F600).
-      - `Mcharp` true for char values, false for `Mtrue`/`Mfalse`/
-        `Mnull`/`Mvoid`/`Meof`/`MFORWARD_MARKER`/fixnums/heap
-        pointers (use a fresh pair).
-      - `Mbooleanp(some_char)` is false.
-      - `Mchar('A') != Mtrue` (and similar) — distinctness.
+- [x] Added `MCHAR_TAG = 0x16`, `Mchar(c)`, `Mchar_val(v)`,
+      `Mcharp(v)` to `include/minim.h`. The encoding follows Chez:
+      low byte is the type tag, codepoint sits in the upper bits.
+- [x] `is_self_evaluating` and `minim_is_leaf` already cover chars
+      via their existing `Mimmediatep` / `MTAG_IMMEDIATE` arms — no
+      change required.
+- [x] Tests in `tests/test_tags.c`: 12-codepoint round-trip
+      (including `0x00`, `'A'`, `0x7F`, `0xFFFF`, `0x10000`, 😀,
+      `0x10FFFF`), disjointness from every other predicate
+      including `Mbooleanp`, and a direct check of the bit
+      encoding. Default and stress configs both pass.
 
 ## Phase 2 — reader
 
-The reader currently has zero `#\` handling. The lexer already
-treats `\` as a non-delimiter symbol char, but `#` followed by `\`
-is not yet recognized as the char prefix.
-
-- [ ] `#\<single>` form: any single character followed by a
-      delimiter. `#\A` → codepoint 0x41, `#\(` → 0x28.
-- [ ] Named chars per R7RS, recognized by reading all subsequent
-      symbol-chars and matching the result:
-
-      | name        | codepoint |
-      |-------------|----------:|
-      | `alarm`     |      0x07 |
-      | `backspace` |      0x08 |
-      | `delete`    |      0x7F |
-      | `escape`    |      0x1B |
-      | `newline`   |      0x0A |
-      | `null`      |      0x00 |
-      | `return`    |      0x0D |
-      | `space`     |      0x20 |
-      | `tab`       |      0x09 |
-
-- [ ] `#\xHH...` hex form (R7RS): `#\x41` → `A`, `#\x10FFFF` → max
-      Unicode. Variable-length hex digits, terminated by a
-      delimiter. Errors on overflow past `0x10FFFF`.
-- [ ] Disambiguation: when `#\` is followed by a single symbol-char
-      that's then immediately a delimiter, it's a single-char.
-      Otherwise read the whole token and match either a hex literal
-      (starts with `x`) or a named char. Unknown → `Merror`.
-- [ ] Tests in `tests/test_parser.c`:
-      - Each R7RS named char parses to its codepoint.
-      - `#\A`, `#\a`, `#\0`, `#\(`, `#\)` — single-char cases that
-        could otherwise be confused with named-char prefixes.
-      - `#\x41`, `#\xFF`, `#\x10FFFF` — hex form across a range.
-      - `#\xZZ`, `#\bogus` — error paths via the `Merror` longjmp
-        pattern used by `test_let_unbound_error`.
+- [x] Added `#\<spec>` handling to `src/read.c`. `read_char`
+      consumes the spec and dispatches:
+      - Length 1 (or first char non-alphabetic) → that single
+        character. `#\(`, `#\1`, `#\!` all parse to their literal
+        codepoint without trying to extend into a name.
+      - `xHHHH` with all hex digits → Unicode hex literal. Range-
+        checks against `0x10FFFF`.
+      - Otherwise looks up the R7RS named-char table (`alarm`,
+        `backspace`, `delete`, `escape`, `newline`, `null`,
+        `return`, `space`, `tab`).
+      - Unknown name or malformed spec → `Merror`.
+- [x] A delimiter must follow the spec; otherwise `Merror`. This
+      makes `#\(a` an error (the `a` after the literal `(` isn't a
+      delimiter), forcing the user to whitespace-separate.
+- [x] Tests in `tests/test_parser.c`: every R7RS named char (9
+      cases), a representative spread of single chars (including
+      ones that could be confused with name prefixes — `#\a`,
+      `#\n`, `#\s`, `#\t`, `#\x` — plus delimiter-shaped chars
+      like `#\(`/`#\)`/`#\.`), 9-case hex range up to `#\x10FFFF`,
+      and a recoverable-error suite covering hex-not-a-name (`xZZ`),
+      unknown names (`bogus`), Chez aliases that R7RS doesn't have
+      (`esc`/`nul`/`linefeed`), Unicode overflow, EOF after `#\`,
+      and missing delimiter. Default and stress configs both pass.
+- Note: the writer still emits `#<unknown-immediate>` for chars in
+      `Mwrite`'s switch — Phase 3 adds the proper output arm.
 
 ## Phase 3 — writer
 
