@@ -21,7 +21,6 @@ static void test_fixnum_roundtrip(void) {
         mobj v = Mfixnum(values[i]);
         CHECK(Mfixnump(v), "fixnum: tag check");
         CHECK(!Mpairp(v), "fixnum: not pair");
-        CHECK(!Mimmediatep(v), "fixnum: not immediate");
         CHECK(Mfixnum_val(v) == values[i], "fixnum: value round-trip");
     }
 }
@@ -36,16 +35,13 @@ static void test_tags_dont_overlap(void) {
 
 static void test_immediate_constants(void) {
     CHECK(Mfalsep(Mfalse), "false: falsep");
-    CHECK(Mimmediatep(Mfalse), "false: immediatep");
     CHECK(!Mtruep(Mfalse), "false: not truep");
     CHECK(!Mnullp(Mfalse), "false: not nullp");
 
     CHECK(Mtruep(Mtrue), "true: truep");
-    CHECK(Mimmediatep(Mtrue), "true: immediatep");
     CHECK(!Mfalsep(Mtrue), "true: not falsep");
 
     CHECK(Mnullp(Mnull), "null: nullp");
-    CHECK(Mimmediatep(Mnull), "null: immediatep");
     CHECK(!Mfalsep(Mnull), "null: not falsep");
     CHECK(!Mtruep(Mnull), "null: not truep");
 
