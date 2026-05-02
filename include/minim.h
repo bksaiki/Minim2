@@ -259,6 +259,17 @@ mobj Mprim(const char *name, Mprim_fn fn, intptr_t arity_min, intptr_t arity_max
 Mprim_fn Mprim_fn_of(mobj v);
 
 /* ----------------------------------------------------------------------
+ * Evaluator
+ *
+ * Meval consumes one expression (already a parsed mobj — typically the
+ * result of Mread) and returns its value. Evaluation runs as a state
+ * machine on top of the spaghetti-stack continuation chain; see
+ * docs/EVAL.md.
+ * -------------------------------------------------------------------- */
+
+mobj Meval(mobj expr);
+
+/* ----------------------------------------------------------------------
  * System
  * -------------------------------------------------------------------- */
 

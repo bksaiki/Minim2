@@ -8,6 +8,8 @@ void Minit(void) {
 
     quote_sym = Mintern("quote");
     minim_protect(&quote_sym);
+
+    eval_init();
 }
 
 void Mshutdown(void) {

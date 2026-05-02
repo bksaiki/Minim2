@@ -14,9 +14,14 @@ void symbol_shutdown(void);
  * stored as a fixnum in the prim object's slot 3. */
 size_t prim_fn_register(Mprim_fn fn);
 
-/* Defined in eval.c. Resets the primitive-function table index so a
- * new Minit/Mshutdown cycle starts from index 0. The malloc'd table
- * itself is reused across cycles. */
+/* Defined in eval.c. Interns the special-form symbols, registers the
+ * eval-loop state slots as global GC roots, and seeds them. */
+void eval_init(void);
+
+/* Defined in eval.c. Resets the primitive-function table index, the
+ * eval-loop state slots, and the special-form symbol caches so a new
+ * Minit/Mshutdown cycle starts cleanly. The malloc'd prim table
+ * buffer is reused across cycles. */
 void eval_shutdown(void);
 
 #endif /* MINIM_INTERNAL_H_ */
