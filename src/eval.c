@@ -1,6 +1,8 @@
 #include "minim.h"
 #include "internal.h"
 
+#include <setjmp.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -40,6 +42,31 @@ Mprim_fn Mprim_fn_of(mobj v) {
 }
 
 /* ======================================================================
+ * Recoverable errors — see Merror in include/minim.h.
+ * ====================================================================== */
+
+jmp_buf *minim_error_jmp = NULL;
+size_t   minim_error_jmp_ssp = 0;
+
+void Merror(const char *fmt, ...) {
+    va_list ap;
+    fputs("minim: ", stderr);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fputc('\n', stderr);
+
+    if (minim_error_jmp != NULL) {
+        /* Unwind any partial MINIM_GC_PROTECT frames left behind by
+         * the longjmped-over code so the next operation sees a clean
+         * shadow stack. */
+        minim_ssp = minim_error_jmp_ssp;
+        longjmp(*minim_error_jmp, 1);
+    }
+    abort();
+}
+
+/* ======================================================================
  * Eval loop state
  *
  * Four globals carry the entire state of the abstract machine. Three
@@ -63,18 +90,7 @@ mobj eval_expr;
 mobj eval_env;
 mobj eval_kont;
 
-/* Cached interned symbols for special forms. Initialized once at
- * eval_init and registered as global roots; cleared by eval_shutdown
- * to keep Mshutdown/Minit cycles clean. */
-static mobj if_sym;
-static mobj begin_sym;
-
 void eval_init(void) {
-    if_sym = Mintern("if");
-    minim_protect(&if_sym);
-    begin_sym = Mintern("begin");
-    minim_protect(&begin_sym);
-
     eval_expr = Mnull;
     eval_env = Mnull;
     eval_kont = Mnull;
@@ -103,27 +119,23 @@ void eval_shutdown(void) {
  * ====================================================================== */
 
 static bool is_self_evaluating(mobj v) {
-    return Mfixnump(v) || Mflonump(v) || Mvectorp(v)
-        || v == Mtrue || v == Mfalse || v == Meof;
+    return Mfixnump(v) || Mflonump(v) || Mimmediatep(v) || Mvectorp(v);
 }
 
 static mobj env_lookup(mobj env, mobj sym) {
     /* Phase 2 has no bindings yet — every lookup is unbound. Lambda
      * and define land in Phases 3-4 and will fill in this routine. */
     (void)env;
-    fprintf(stderr, "minim: unbound variable: %s\n", Msymbol_name(sym));
-    abort();
+    Merror("unbound variable: %s", Msymbol_name(sym));
+    return Mnull; /* unreachable */
 }
 
-/* Length of a proper list, for arity checks on special forms. Aborts
+/* Length of a proper list, for arity checks on special forms. Errors
  * if the list is improper. */
 static size_t list_length(mobj lst) {
     size_t n = 0;
     while (Mpairp(lst)) { n++; lst = Mcdr(lst); }
-    if (!Mnullp(lst)) {
-        fprintf(stderr, "minim: improper list where proper list expected\n");
-        abort();
-    }
+    if (!Mnullp(lst)) Merror("improper list where proper list expected");
     return n;
 }
 
@@ -156,10 +168,7 @@ static void step_eval(void) {
 
         if (head == quote_sym) {
             /* (quote datum) → datum, with no recursion. */
-            if (list_length(rest) != 1) {
-                fprintf(stderr, "minim: malformed quote\n");
-                abort();
-            }
+            if (list_length(rest) != 1) Merror("malformed quote");
             eval_expr = Mcar(rest);
             eval_mode = APPLY_MODE;
             return;
@@ -176,10 +185,7 @@ static void step_eval(void) {
              * Mkont_if allocates and the bare C local would go stale
              * across the collection. then_e and else_e are protected
              * inside Mkont_if itself. */
-            if (list_length(rest) != 3) {
-                fprintf(stderr, "minim: malformed if (expected 3 args)\n");
-                abort();
-            }
+            if (list_length(rest) != 3) Merror("malformed if (expected 3 args)");
             mobj then_e = Mcar(Mcdr(rest));
             mobj else_e = Mcar(Mcdr(Mcdr(rest)));
             eval_expr = Mcar(rest);
@@ -196,10 +202,7 @@ static void step_eval(void) {
              *
              * Same discipline as `if`: write the next expression to
              * eval_expr before calling Mkont_seq. */
-            if (Mnullp(rest)) {
-                fprintf(stderr, "minim: empty begin\n");
-                abort();
-            }
+            if (Mnullp(rest)) Merror("empty begin");
             mobj more = Mcdr(rest);
             eval_expr = Mcar(rest);
             if (Mnullp(more)) {
@@ -210,14 +213,13 @@ static void step_eval(void) {
         }
 
         /* Unrecognized compound form. Procedure application lands in
-         * Phase 3; for Phase 2 we abort. */
-        fprintf(stderr, "minim: procedure application not supported in v0\n");
-        abort();
+         * Phase 3; for now this is a recoverable user error. */
+        Merror("procedure application not supported in v0");
+        return; /* unreachable */
     }
 
     /* Mnull, or some other non-evaluable form. */
-    fprintf(stderr, "minim: cannot evaluate this form\n");
-    abort();
+    Merror("cannot evaluate this form");
 }
 
 /* ======================================================================
@@ -260,8 +262,7 @@ static void step_apply(void) {
             /* Should never happen — a one-expression begin doesn't
              * push a SEQ, and longer begins always have at least
              * one element when SEQ is consulted. */
-            fprintf(stderr, "minim: SEQ frame with empty rest\n");
-            abort();
+            Merror("internal: SEQ frame with empty rest");
         }
         mobj first = Mcar(rest);
         mobj more = Mcdr(rest);
@@ -282,9 +283,8 @@ static void step_apply(void) {
         return;
     }
 
-    fprintf(stderr, "minim: APPLY: unhandled kont kind %ld\n",
-            (long)Mfixnum_val(kind));
-    abort();
+    Merror("internal: APPLY: unhandled kont kind %ld",
+           (long)Mfixnum_val(kind));
 }
 
 /* ======================================================================

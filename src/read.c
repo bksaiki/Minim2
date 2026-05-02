@@ -74,20 +74,21 @@ static int matching_paren(int open, int close) {
 }
 
 /* ----------------------------------------------------------------------
- * Errors — abort for now; Phase 5 of the TODO swaps to conditions.
+ * Errors — routed through Merror so an installed handler (e.g. the
+ * REPL's setjmp) can recover. Phase 5 of the parser TODO will surface
+ * these as proper Scheme conditions; until then, "raise" means
+ * print-and-longjmp.
  * -------------------------------------------------------------------- */
 
 static void parse_error(const char *msg) {
-    fprintf(stderr, "minim: parse error: %s\n", msg);
-    abort();
+    Merror("parse error: %s", msg);
 }
 
 static void parse_error_c(const char *msg, int c) {
     if (c == EOF)
-        fprintf(stderr, "minim: parse error: %s (got EOF)\n", msg);
+        Merror("parse error: %s (got EOF)", msg);
     else
-        fprintf(stderr, "minim: parse error: %s (got %c)\n", msg, c);
-    abort();
+        Merror("parse error: %s (got %c)", msg, c);
 }
 
 /* ----------------------------------------------------------------------

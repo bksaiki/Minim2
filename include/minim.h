@@ -1,6 +1,7 @@
 #ifndef MINIM_H
 #define MINIM_H
 
+#include <setjmp.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -118,6 +119,12 @@ static inline bool Mflonump(mobj v) {
 static inline bool Msymbolp(mobj v) {
     return (v & MTAG_MASK) == MTAG_SYMBOL;
 }
+static inline bool Mclosurep(mobj v) {
+    return (v & MTAG_MASK) == MTAG_CLOSURE;
+}
+static inline bool Mimmediatep(mobj v) {
+    return (v & MTAG_MASK) == MTAG_IMMEDIATE;
+}
 
 static inline bool _Mhas_secondary(mobj v, mobj sec) {
     if ((v & MTAG_MASK) != MTAG_TYPED_OBJ) return false;
@@ -126,7 +133,6 @@ static inline bool _Mhas_secondary(mobj v, mobj sec) {
 }
 
 static inline bool Mvectorp(mobj v)  { return _Mhas_secondary(v, MSEC_VECTOR); }
-static inline bool Mclosurep(mobj v) { return (v & MTAG_MASK) == MTAG_CLOSURE; }
 static inline bool Menvp(mobj v)     { return _Mhas_secondary(v, MSEC_ENV); }
 static inline bool Mkontp(mobj v)    { return _Mhas_secondary(v, MSEC_KONT); }
 static inline bool Mprimp(mobj v)    { return _Mhas_secondary(v, MSEC_PRIM); }
@@ -277,6 +283,32 @@ void Minit(void);
 void Mshutdown(void);
 
 /* ----------------------------------------------------------------------
+ * Recoverable runtime errors
+ *
+ * Merror is the runtime's "raise" — it prints `minim: <msg>\n` to
+ * stderr, then either longjmps to an installed handler or aborts.
+ *
+ * To install a handler (e.g. for a REPL that wants to survive parse
+ * and eval errors): set `minim_error_jmp` to point at a jmp_buf that
+ * has been populated by setjmp, and set `minim_error_jmp_ssp` to the
+ * shadow-stack depth you want restored on longjmp. Merror restores
+ * `minim_ssp` to that depth before jumping, so any in-flight
+ * MINIM_GC_PROTECT frames inside the longjmped-over code are unwound.
+ *
+ * No handler installed (`minim_error_jmp == NULL`) ⇒ Merror aborts,
+ * preserving the previous behavior for tests and non-interactive use.
+ *
+ * Phase 9 of the eval plan replaces this with proper Scheme exception
+ * handling; until then, every "this would have been a Scheme exception"
+ * site calls Merror.
+ * -------------------------------------------------------------------- */
+
+extern jmp_buf *minim_error_jmp;
+extern size_t   minim_error_jmp_ssp;
+
+void Merror(const char *fmt, ...);
+
+/* ----------------------------------------------------------------------
  * Reader / writer
  *
  * `mreader` wraps either a C string or a FILE *; `Mread` consumes one
@@ -316,6 +348,8 @@ void Mwrite(mobj v, FILE *out);
  * Interned symbols
  * -------------------------------------------------------------------- */
 
+extern mobj begin_sym;
+extern mobj if_sym;
 extern mobj quote_sym;
 
 /* ----------------------------------------------------------------------
