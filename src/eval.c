@@ -106,6 +106,7 @@ void eval_init(void) {
     minim_protect(&eval_env);
     minim_protect(&eval_kont);
     minim_protect(&top_level_env);
+    prims_register_all();
 }
 
 void eval_shutdown(void) {
@@ -167,6 +168,19 @@ static void top_env_define(mobj sym, mobj val) {
     mobj entry = Mcons(sym, val);
     MINIM_GC_PROTECT(entry);
     top_level_env = Mcons(entry, top_level_env);
+    MINIM_GC_FRAME_END;
+}
+
+/* Bind `name` to a freshly-allocated primitive procedure in the
+ * top-level env. Used by prims_register_all during eval_init. */
+void prim_register(const char *name, Mprim_fn fn,
+                   intptr_t arity_min, intptr_t arity_max) {
+    MINIM_GC_FRAME_BEGIN;
+    mobj sym = Mintern(name);
+    MINIM_GC_PROTECT(sym);
+    mobj p = Mprim(name, fn, arity_min, arity_max);
+    MINIM_GC_PROTECT(p);
+    top_env_define(sym, p);
     MINIM_GC_FRAME_END;
 }
 
@@ -585,11 +599,38 @@ static void step_apply(void) {
             return;
         }
 
-        if (Mprimp(op) || Mkontp(op)) {
-            Merror("procedure kind not yet supported (Phase 4 closures only)");
-        } else {
-            Merror("attempt to apply a non-procedure value");
+        if (Mprimp(op)) {
+            /* Arity check using the prim's stored min/max, then call
+             * the C function with the already-evaluated args list.
+             * `args` is on the protect stack from earlier in this
+             * branch, so the prim is free to allocate. The result is
+             * a bare local but we use it immediately to write a
+             * registered global. */
+            intptr_t arity_min = Mfixnum_val(Mprim_arity_min(op));
+            intptr_t arity_max = Mfixnum_val(Mprim_arity_max(op));
+            size_t n_args = list_length(args);
+            if (n_args < (size_t)arity_min) {
+                Merror("arity mismatch: %s expected at least %ld arg%s, got %zu",
+                       Msymbol_name(Mprim_name(op)), (long)arity_min,
+                       arity_min == 1 ? "" : "s", n_args);
+            }
+            if (arity_max >= 0 && n_args > (size_t)arity_max) {
+                Merror("arity mismatch: %s expected at most %ld arg%s, got %zu",
+                       Msymbol_name(Mprim_name(op)), (long)arity_max,
+                       arity_max == 1 ? "" : "s", n_args);
+            }
+            Mprim_fn fn = Mprim_fn_of(op);
+            eval_expr = fn(args);
+            MINIM_GC_FRAME_END;
+            eval_mode = APPLY_MODE;
+            return;
         }
+
+        if (Mkontp(op)) {
+            Merror("continuation invocation not yet supported (Phase 8)");
+        }
+
+        Merror("attempt to apply a non-procedure value");
         /* Merror longjmps; not reached. */
         MINIM_GC_FRAME_END;
         return;

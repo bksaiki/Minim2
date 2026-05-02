@@ -668,6 +668,200 @@ static void test_closure_state(void) {
     Mshutdown();
 }
 
+/* ----------------------------------------------------------------------
+ * Phase 6 — primitives
+ *
+ * Covers the first batch: type predicates, pair/list ops, vector ops,
+ * equality. Arithmetic and I/O land in later batches. The primitives
+ * are minimal — no argument-type checking — so these tests don't try
+ * to provoke (car 5) etc.; the contract is "well-typed input only".
+ * -------------------------------------------------------------------- */
+
+static void test_type_predicates(void) {
+    Minit();
+    /* Each predicate: one true case from the matching value type, then
+     * a sweep of negative cases drawn from other types. */
+    CHECK(Mtruep(eval_str("(pair? '(1 2))")),       "pair? on pair");
+    CHECK(Mfalsep(eval_str("(pair? '())")),         "pair? on null");
+    CHECK(Mfalsep(eval_str("(pair? 1)")),           "pair? on fixnum");
+    CHECK(Mfalsep(eval_str("(pair? 'foo)")),        "pair? on symbol");
+    CHECK(Mfalsep(eval_str("(pair? #(1 2 3))")),    "pair? on vector");
+
+    CHECK(Mtruep(eval_str("(null? '())")),          "null? on null");
+    CHECK(Mfalsep(eval_str("(null? '(1))")),        "null? on pair");
+    CHECK(Mfalsep(eval_str("(null? #f)")),          "null? on #f");
+
+    CHECK(Mtruep(eval_str("(symbol? 'foo)")),       "symbol? on symbol");
+    CHECK(Mfalsep(eval_str("(symbol? 1)")),         "symbol? on fixnum");
+    CHECK(Mfalsep(eval_str("(symbol? '(a b))")),    "symbol? on pair");
+    CHECK(Mfalsep(eval_str("(symbol? #\\a)")),      "symbol? on char");
+
+    CHECK(Mtruep(eval_str("(boolean? #t)")),        "boolean? on #t");
+    CHECK(Mtruep(eval_str("(boolean? #f)")),        "boolean? on #f");
+    CHECK(Mfalsep(eval_str("(boolean? 0)")),        "boolean? on 0");
+    CHECK(Mfalsep(eval_str("(boolean? '())")),      "boolean? on null");
+
+    CHECK(Mtruep(eval_str("(number? 42)")),         "number? on fixnum");
+    CHECK(Mtruep(eval_str("(number? -7)")),         "number? on negative fixnum");
+    CHECK(Mfalsep(eval_str("(number? 'foo)")),      "number? on symbol");
+    CHECK(Mfalsep(eval_str("(number? '(1 2))")),    "number? on pair");
+
+    CHECK(Mtruep(eval_str("(vector? #(1 2))")),     "vector? on vector");
+    CHECK(Mtruep(eval_str("(vector? #())")),        "vector? on empty vector");
+    CHECK(Mfalsep(eval_str("(vector? '(1 2))")),    "vector? on pair");
+
+    CHECK(Mtruep(eval_str("(char? #\\a)")),         "char? on char");
+    CHECK(Mtruep(eval_str("(char? #\\space)")),     "char? on named char");
+    CHECK(Mfalsep(eval_str("(char? 65)")),          "char? on fixnum");
+    CHECK(Mfalsep(eval_str("(char? 'a)")),          "char? on symbol");
+
+    CHECK(Mtruep(eval_str("(procedure? car)")),     "procedure? on prim");
+    CHECK(Mtruep(eval_str("(procedure? (lambda (x) x))")),
+                                                    "procedure? on closure");
+    CHECK(Mfalsep(eval_str("(procedure? 1)")),      "procedure? on fixnum");
+    CHECK(Mfalsep(eval_str("(procedure? '(1))")),   "procedure? on pair");
+
+    /* eof-object? — we don't yet have a way to *produce* eof (no
+     * `read` primitive), so the negative cases are all we test here.
+     * The positive case is exercised in test_writer's reader paths. */
+    CHECK(Mfalsep(eval_str("(eof-object? '())")),   "eof-object? on null");
+    CHECK(Mfalsep(eval_str("(eof-object? 0)")),     "eof-object? on fixnum");
+    Mshutdown();
+}
+
+static void test_pairs(void) {
+    Minit();
+    /* cons builds a pair; car/cdr project. */
+    mobj v = eval_str("(cons 1 2)");
+    CHECK(Mpairp(v), "cons: result is a pair");
+    CHECK(Mfixnum_val(Mcar(v)) == 1, "cons: car=1");
+    CHECK(Mfixnum_val(Mcdr(v)) == 2, "cons: cdr=2");
+
+    CHECK(Mfixnum_val(eval_str("(car '(7 8 9))")) == 7, "car: head of list");
+    CHECK(Mpairp(eval_str("(cdr '(7 8 9))")),           "cdr: tail is pair");
+    CHECK(Mfixnum_val(eval_str("(car (cdr '(7 8 9)))")) == 8, "car (cdr ...) = 8");
+    CHECK(Mnullp(eval_str("(cdr (cdr (cdr '(7 8 9))))")), "cdr cdr cdr = ()");
+
+    /* Build a list via cons and verify shape. */
+    v = eval_str("(cons 1 (cons 2 (cons 3 '())))");
+    CHECK(Mpairp(v) && Mfixnum_val(Mcar(v)) == 1, "cons chain: a0=1");
+    CHECK(Mfixnum_val(Mcar(Mcdr(v))) == 2,        "cons chain: a1=2");
+    CHECK(Mfixnum_val(Mcar(Mcdr(Mcdr(v)))) == 3,  "cons chain: a2=3");
+    CHECK(Mnullp(Mcdr(Mcdr(Mcdr(v)))),            "cons chain: terminated");
+    Mshutdown();
+}
+
+static void test_list(void) {
+    Minit();
+    /* (list) → '(); (list a b c) → (a b c). */
+    CHECK(Mnullp(eval_str("(list)")),                "list: zero args");
+
+    mobj v = eval_str("(list 1 2 3)");
+    CHECK(Mpairp(v) && Mfixnum_val(Mcar(v)) == 1,    "list: a0=1");
+    CHECK(Mfixnum_val(Mcar(Mcdr(v))) == 2,           "list: a1=2");
+    CHECK(Mfixnum_val(Mcar(Mcdr(Mcdr(v)))) == 3,     "list: a2=3");
+    CHECK(Mnullp(Mcdr(Mcdr(Mcdr(v)))),               "list: terminated");
+
+    /* Args are evaluated, so we can mix expressions. */
+    v = eval_str("(list 'a (cons 1 2) #t)");
+    CHECK(Msymbolp(Mcar(v)) && strcmp(Msymbol_name(Mcar(v)), "a") == 0,
+                                                     "list: a0='a");
+    CHECK(Mpairp(Mcar(Mcdr(v))),                     "list: a1=(1 . 2)");
+    CHECK(Mtruep(Mcar(Mcdr(Mcdr(v)))),               "list: a2=#t");
+    Mshutdown();
+}
+
+static void test_vectors(void) {
+    Minit();
+    /* make-vector with default fill is unspecified but should be a
+     * void; with explicit fill, the fill value populates every slot. */
+    mobj v = eval_str("(make-vector 3 'x)");
+    CHECK(Mvectorp(v) && Mvector_length(v) == 3,         "make-vector: length 3");
+    CHECK(Msymbolp(Mvector_ref(v, 0)) &&
+          strcmp(Msymbol_name(Mvector_ref(v, 0)), "x") == 0,
+                                                          "make-vector: fill 'x at 0");
+    CHECK(Msymbolp(Mvector_ref(v, 2)),                   "make-vector: fill at 2");
+
+    /* No-fill form. */
+    v = eval_str("(make-vector 0)");
+    CHECK(Mvectorp(v) && Mvector_length(v) == 0,         "make-vector: empty");
+
+    /* (vector ...) builds from its (already-evaluated) args. */
+    v = eval_str("(vector 10 20 30)");
+    CHECK(Mvector_length(v) == 3,                        "vector: length");
+    CHECK(Mfixnum_val(Mvector_ref(v, 0)) == 10,          "vector: [0]=10");
+    CHECK(Mfixnum_val(Mvector_ref(v, 2)) == 30,          "vector: [2]=30");
+
+    CHECK(Mvector_length(eval_str("(vector)")) == 0,     "vector: zero args");
+
+    /* vector-ref / vector-length. */
+    CHECK(Mfixnum_val(eval_str("(vector-ref #(7 8 9) 1)")) == 8,
+                                                          "vector-ref: 8");
+    CHECK(Mfixnum_val(eval_str("(vector-length #(a b c d))")) == 4,
+                                                          "vector-length: 4");
+
+    /* vector-set! mutates and returns void. */
+    eval_seq(
+        "(define vv (vector 1 2 3))"
+        "(vector-set! vv 1 99)");
+    CHECK(Mfixnum_val(eval_str("(vector-ref vv 1)")) == 99,
+                                                          "vector-set!: mutation visible");
+    CHECK(Mfixnum_val(eval_str("(vector-ref vv 0)")) == 1,
+                                                          "vector-set!: other slots untouched");
+    Mshutdown();
+}
+
+static void test_equality(void) {
+    Minit();
+    /* eq?: word-level equality. Same fixnum, same symbol (interned),
+     * same immediate, same heap pointer. */
+    CHECK(Mtruep(eval_str("(eq? 1 1)")),                 "eq?: 1 1");
+    CHECK(Mfalsep(eval_str("(eq? 1 2)")),                "eq?: 1 2");
+    CHECK(Mtruep(eval_str("(eq? 'foo 'foo)")),           "eq?: same symbol");
+    CHECK(Mfalsep(eval_str("(eq? 'foo 'bar)")),          "eq?: different symbols");
+    CHECK(Mtruep(eval_str("(eq? '() '())")),             "eq?: () ()");
+    CHECK(Mtruep(eval_str("(eq? #t #t)")),               "eq?: #t #t");
+    CHECK(Mfalsep(eval_str("(eq? #t #f)")),              "eq?: #t #f");
+    CHECK(Mtruep(eval_str("(eq? #\\a #\\a)")),           "eq?: same char");
+
+    /* Two freshly-cons'd pairs with equal contents are NOT eq?. */
+    CHECK(Mfalsep(eval_str("(eq? (cons 1 2) (cons 1 2))")),
+                                                          "eq?: distinct cons cells");
+
+    /* But the *same* pair is eq? to itself. */
+    eval_seq("(define p (cons 1 2))");
+    CHECK(Mtruep(eval_str("(eq? p p)")),                 "eq?: pair eq? to itself");
+
+    /* eqv?: extends eq? with flonum numeric equality. */
+    CHECK(Mtruep(eval_str("(eqv? 1 1)")),                "eqv?: 1 1");
+    CHECK(Mfalsep(eval_str("(eqv? 1 2)")),               "eqv?: 1 2");
+    CHECK(Mtruep(eval_str("(eqv? 'foo 'foo)")),          "eqv?: same symbol");
+    CHECK(Mfalsep(eval_str("(eqv? (cons 1 2) (cons 1 2))")),
+                                                          "eqv?: distinct pairs are not eqv");
+    Mshutdown();
+}
+
+static void test_prim_arity_error(void) {
+    Minit();
+    jmp_buf jmp;
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+
+    int too_few = 0, too_many = 0;
+    if (setjmp(jmp) == 0) eval_str("(cons 1)");        else too_few = 1;
+    if (setjmp(jmp) == 0) eval_str("(car 1 2)");       else too_many = 1;
+
+    /* Varargs prim accepts any count and should never trip the check. */
+    int vararg_ok = (setjmp(jmp) == 0);
+    if (vararg_ok) eval_str("(list)");
+
+    minim_error_jmp = NULL;
+    CHECK(too_few,    "prim arity: cons with 1 arg → Merror");
+    CHECK(too_many,   "prim arity: car with 2 args → Merror");
+    CHECK(vararg_ok,  "prim arity: list with 0 args is fine");
+    Mshutdown();
+}
+
 int main(void) {
     test_self_evaluating();
     test_quote();
@@ -697,6 +891,12 @@ int main(void) {
     test_closure_state();
     test_internal_define_rejected();
     test_empty_list_is_error();
+    test_type_predicates();
+    test_pairs();
+    test_list();
+    test_vectors();
+    test_equality();
+    test_prim_arity_error();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

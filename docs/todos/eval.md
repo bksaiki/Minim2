@@ -157,28 +157,38 @@ across each allocation.
       and `MINIM_GC_STRESS=ON` configs both pass.
 
 ## Phase 6 — primitives
-- [ ] `MSEC_PRIM` constructor + `prim_register(name, fn, min, max)`
-      helper that interns the name, allocates the prim, and installs
-      it into the top-level env.
-- [ ] APPLY dispatches on closure-vs-primitive-vs-cont; primitive
-      path calls the C function with the `evald` arg list.
-- [ ] Implement (split into groups; one PR per group is fine):
-      - Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
+
+Primitives are deliberately minimal: arity is checked at the call
+site (using the prim's stored min/max), but argument types are not.
+Passing the wrong type is undefined behavior at this layer; a
+type-checking / contract layer belongs above this one.
+
+- [x] `MSEC_PRIM` constructor (Phase 1) + `prim_register(name, fn,
+      min, max)` helper in `src/eval.c` that interns the name, allocates
+      the prim, and installs it into the top-level env.
+- [x] APPLY dispatches on closure-vs-primitive-vs-cont; primitive
+      path arity-checks then calls the C function with the `evald`
+      arg list. Continuation invocation is still stubbed (Phase 8).
+- Implement (split into groups; one PR per group is fine):
+      - [x] Type predicates: `pair?`, `null?`, `symbol?`, `boolean?`,
+        `number?`, `procedure?`, `vector?`, `char?`, `eof-object?`.
+      - [x] Pair / list: `cons`, `car`, `cdr`, `list`. (`list?` and
+        the longer accessors `caar`/`cadr`/... can land later.)
+      - [x] Vectors: `make-vector`, `vector`, `vector-ref`,
+        `vector-set!`, `vector-length`.
+      - [x] Equality: `eq?`, `eqv?`. `equal?` deferred until we have
+        cycle-aware structural equality.
+      - [ ] Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
         `quotient`, `remainder`, `zero?`, `positive?`, `negative?`,
         `abs`. Mixed fixnum/flonum follows R7RS contagion (any
         flonum arg ⇒ flonum result).
-      - Pair / list: `cons`, `car`, `cdr`, `pair?`, `null?`, `list`,
-        `list?`.
-      - Equality: `eq?`, `eqv?`. `equal?` deferred until we have
-        cycle-aware structural equality.
-      - I/O: `display`, `write`, `newline`, `read`. `display` only
+      - [ ] I/O: `display`, `write`, `newline`, `read`. `display` only
         diverges from `write` once strings exist (chars are already
         readable both ways).
-      - Type predicates: `symbol?`, `number?`, `boolean?`,
-        `procedure?`, `vector?`, `char?`, `eof-object?`.
-      - Vectors: `make-vector`, `vector-ref`, `vector-set!`,
-        `vector-length`, `vector?`, `vector`.
-- [ ] Tests per group.
+- [x] Tests per group landed (`test_type_predicates`, `test_pairs`,
+      `test_list`, `test_vectors`, `test_equality`,
+      `test_prim_arity_error`). Default and `MINIM_GC_STRESS=ON`
+      configs both pass.
 
 ## Phase 7 — tail-call optimization
 - [ ] By construction: `KONT_APP` pops *before* invoking the closure

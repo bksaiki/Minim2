@@ -15,6 +15,7 @@ add_library(minim_rt STATIC
     src/alloc.c
     src/eval.c
     src/gc.c
+    src/prims.c
     src/read.c
     src/symbol.c
     src/system.c
