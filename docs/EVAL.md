@@ -2,7 +2,7 @@
 
 This document captures the design of Minim's tree-walking Scheme
 interpreter. The TODO checklist lives at
-[`docs/agents/eval.md`](./agents/eval.md). The pointer tagging,
+[`docs/todos/eval.md`](./todos/eval.md). The pointer tagging,
 allocator, and GC are described in [`docs/GC.md`](./GC.md); this doc
 extends those layouts with the heap shapes the evaluator needs.
 
@@ -35,7 +35,7 @@ primary tag.
 self-evaluating positions and as primitive arguments): fixnum, pair,
 flonum, symbol, vector, character, plus the immediates `#t`, `#f`,
 `'()`, `eof`, `void`. Characters are the most recent addition; see
-[`docs/agents/chars.md`](agents/chars.md).
+[`docs/todos/chars.md`](todos/chars.md).
 
 **Out of scope for v1**, called out so future work doesn't redesign
 the same surface:
@@ -50,7 +50,7 @@ the same surface:
 - Tail-call detection at parse time. We don't need it — the kont
   placement rules give us TCO automatically.
 - Bignums, rationals, complex numbers; strings. (Characters now
-  exist — see `docs/agents/chars.md`.)
+  exist — see `docs/todos/chars.md`.)
 
 ## Pointer tagging additions
 

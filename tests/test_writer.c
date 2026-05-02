@@ -95,7 +95,7 @@ static void test_flonums(void) {
     /* A non-integral value: writer must produce a string that contains
      * `.` (so it is not confused with a fixnum on the wire). Read-back
      * round-tripping is deferred until the parser learns flonum syntax
-     * — see docs/agents/parser.md Phase 3. */
+     * — see docs/todos/parser.md Phase 3. */
     char *s = write_to_str(Mflonum(3.14159));
     CHECK(strchr(s, '.') != NULL, "flonum: 3.14159 contains '.'");
     free(s);

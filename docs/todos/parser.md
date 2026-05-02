@@ -39,7 +39,7 @@ The legacy `old_parser.c` already has the syntax handling and can be
 ported once the type exists.
 
 - [x] Characters `#\<name>` / `#\<single>` / `#\xHH...` — landed
-      via `docs/agents/chars.md`. R7RS named chars only: `alarm`,
+      via `docs/todos/chars.md`. R7RS named chars only: `alarm`,
       `backspace`, `delete`, `escape`, `newline`, `null`, `return`,
       `space`, `tab`. Hex form accepts up to `0x10FFFF`. Disambig:
       first non-alphabetic char or first-only-then-delimiter is a
