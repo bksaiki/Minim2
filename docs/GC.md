@@ -6,7 +6,7 @@ The design is a deliberate slim-down of Chez Scheme's runtime (referenced as `c/
 
 ## Scope
 
-**Types supported in v1**: fixnum, pair, flonum, symbol, vector, plus three immediate constants (`#t`, `#f`, `'()`). Anything else — closures, strings, bignums, characters, records, ports — is out of scope for now and reserved in the tag space.
+**Types supported in v1**: fixnum, pair, flonum, symbol, vector, plus four immediate constants (`#t`, `#f`, `'()`, `eof`). Anything else — closures, strings, bignums, characters, records, ports — is out of scope for now and reserved in the tag space.
 
 **Concurrency**: single-threaded. No locks, no atomics.
 
@@ -284,49 +284,25 @@ Lives outside the GC heap. Hash table keyed by `(name, length)`, mapping to `mob
 - **GC interaction**: every bucket pointer (the `mobj` symbol) is a global root. On collection, `forward(&bucket[i])` updates each bucket to point at the symbol's new heap address.
 - **`minim_intern(const char *s)`**: hash, search bucket for an existing match, return it; otherwise allocate a new symbol heap object with the name copied via `strdup`, install it in the bucket, return it.
 
-## File structure
+## Source map
 
-```
-include/
-  minim.h              # public: types, predicates, accessors,
-                       # constructors, GC protect macros
+| File              | Role                                                                       |
+|-------------------|----------------------------------------------------------------------------|
+| `include/minim.h` | Public API: types, predicates, accessors, constructors, GC protect macros. |
+| `include/gc.h`    | Heap layout constants and GC entry points (`gc_init`, `gc_alloc`, etc.).   |
+| `src/alloc.c`     | Bump-pointer allocation and constructors (`Mcons`, `Mvector`, `Mflonum`).  |
+| `src/gc.c`        | Cheney algorithm: `forward`, scan loop, `gc_collect`, heap growth.         |
+| `src/symbol.c`    | Intern table and `Mintern`.                                                |
 
-src/
-  types.h              # internal: layout offsets, header packing, MFORWARD_MARKER
-  gc.h                 # internal: gc_init, gc_alloc, gc_collect, minim_protect
-  alloc.c              # bump alloc + constructors:
-                       # minim_cons, minim_make_vector, minim_make_flonum
-  gc.c                 # Cheney: forward, scan, gc_collect, heap-grow
-  symbol.c             # intern table + minim_make_symbol + minim_intern
-  main.c               # smoke-test driver
+## Verification properties
 
-tests/
-  test_gc.c            # standalone executable: cons/vector/circular/intern survival
+The runtime is exercised both with default settings and with `MINIM_GC_STRESS` enabled, which forces a full collection at every allocation point so that any missing `MINIM_GC_PROTECT` becomes a deterministic crash on the offending line. The properties under test:
 
-docs/agents/
-  design.md            # this document
-  TODO.md              # work-breakdown checklist
-```
-
-`CMakeLists.txt` updates:
-- Add `src/gc.c` and `src/symbol.c` to the `minim` target.
-- Add `option(MINIM_GC_STRESS "Trigger GC on every allocation" OFF)` and propagate via `target_compile_definitions`.
-- Add `enable_testing()` and a `minim_test_gc` executable target linking the same sources plus `tests/test_gc.c`.
-- Add `add_test(NAME gc COMMAND minim_test_gc)`.
-
-## Verification
-
-End-to-end:
-
-1. **Normal build** — `cmake -B build && cmake --build build && ./build/minim` prints the banner; allocator smoke test runs without crashing.
-2. **Stress build** — `cmake -B build-stress -DMINIM_GC_STRESS=ON && cmake --build build-stress && ctest --test-dir build-stress` forces a GC on every allocation; the test suite still passes. This is the strongest guarantee that protect annotations are correct.
-3. **GDB sanity check** — break in `gc_collect`, run a test, watch a pair's address change post-collection while `MINIM_CAR` still returns the right value.
-
-Test cases in `tests/test_gc.c`:
-- Cons survives: build a long list, force `gc_collect`, walk it again, verify contents.
-- Vector survives: same pattern with element pointers (mix of fixnums and pairs).
-- Circular list: `set-car!` a pair to itself; `gc_collect` must terminate (forwarding marker prevents infinite recursion).
-- Intern identity: `minim_intern("foo") == minim_intern("foo")` before and after `gc_collect`.
+- **Cons survival.** A long chain of pairs built across many allocations retains its values across forced collections.
+- **Vector survival.** A vector whose slots are heap pointers (pairs, flonums) retains length and slot contents across collections.
+- **Circular structure.** `set-car!` of a pair to itself does not cause `gc_collect` to loop — the forwarding marker breaks the cycle on the second visit.
+- **Intern identity.** `Mintern("foo") == Mintern("foo")` before and after collection, because intern-table buckets are global roots and get forwarded with the rest.
+- **Heap growth.** Allocating well beyond a single semispace eventually triggers the doubling growth path, and live data survives the second pass into the larger space.
 
 ## Out of scope for v1
 
