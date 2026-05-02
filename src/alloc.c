@@ -3,6 +3,10 @@
 
 #include <string.h>
 
+/* Defined in symbol.c. Tears down the intern table; must run before
+ * gc_shutdown so we can still read symbol name pointers. */
+void symbol_shutdown(void);
+
 #define HEAP_INITIAL_BYTES (1024 * 1024) /* 1 MiB per semispace */
 
 void Minit(void) {
@@ -10,6 +14,7 @@ void Minit(void) {
 }
 
 void Mshutdown(void) {
+    symbol_shutdown();
     gc_shutdown();
 }
 

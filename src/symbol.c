@@ -77,3 +77,23 @@ mobj Mintern(const char *name) {
 
     return sym;
 }
+
+void symbol_shutdown(void) {
+    if (!intern_table) return;
+
+    for (size_t i = 0; i < intern_table_sz; i++) {
+        intern_bucket *b = intern_table[i];
+        while (b) {
+            intern_bucket *next = b->next;
+            /* The symbol's heap object goes away with gc_shutdown; only the
+             * malloc'd name string is ours to free. */
+            free((void *)Msymbol_name(b->symbol));
+            free(b);
+            b = next;
+        }
+    }
+    free(intern_table);
+    intern_table = NULL;
+    intern_table_sz = 0;
+    intern_table_n = 0;
+}

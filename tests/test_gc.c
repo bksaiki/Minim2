@@ -186,12 +186,42 @@ static void test_heap_growth(void) {
     Mshutdown();
 }
 
+/* Regression: Mshutdown must tear down the intern table too. Otherwise
+ * the surviving buckets hold mobj pointers into the just-unmapped heap,
+ * and the next Mintern walks a chain of dangling pointers. */
+static void test_shutdown_resets_intern_table(void) {
+    Minit();
+    mobj a = Mintern("foo");
+    CHECK(Msymbolp(a), "shutdown/reinit: pre-shutdown foo is a symbol");
+    Mshutdown();
+
+    Minit();
+    /* Same name, fresh runtime: must not crash on stale buckets, must
+     * produce a valid symbol that lives in the new heap. */
+    mobj a2 = Mintern("foo");
+    CHECK(Msymbolp(a2), "shutdown/reinit: post-reinit foo is a symbol");
+    CHECK(strcmp(Msymbol_name(a2), "foo") == 0,
+          "shutdown/reinit: post-reinit name correct");
+
+    /* And the new symbol is GC-tracked: a forced collection must not
+     * dangle the bucket. (a2 itself is a stale stack copy post-collect,
+     * so we compare two fresh post-collect interns instead.) */
+    gc_collect(0);
+    mobj a3 = Mintern("foo");
+    mobj a4 = Mintern("foo");
+    CHECK(a3 == a4, "shutdown/reinit: bucket survives GC after reinit");
+    CHECK(strcmp(Msymbol_name(a3), "foo") == 0,
+          "shutdown/reinit: name still readable after GC");
+    Mshutdown();
+}
+
 int main(void) {
     test_cons_survives_gc();
     test_vector_survives_gc();
     test_circular_list_gc();
     test_intern_identity_across_gc();
     test_heap_growth();
+    test_shutdown_resets_intern_table();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }
