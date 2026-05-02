@@ -1,5 +1,4 @@
 #include "minim.h"
-#include "types.h"
 #include "gc.h"
 
 #include <stdlib.h>
@@ -52,7 +51,7 @@ mobj Mintern(const char *name) {
     }
 
     /* Allocate new symbol on the GC heap */
-    char *p = gc_alloc(MINIM_SYMBOL_BYTES);
+    char *p = gc_alloc(MINIM_SYMBOL_SIZE);
     /* header word — we use MSEC_MASK+1 area; for symbols the header
      * just needs to be non-MFORWARD_MARKER.  We use MTAG_SYMBOL as
      * a recognizable sentinel. */

@@ -1,5 +1,4 @@
 #include "minim.h"
-#include "types.h"
 #include "gc.h"
 
 #include <sys/mman.h>
@@ -88,18 +87,23 @@ void gc_shutdown(void) {
  * Forward / object_size  (used by gc_collect)
  * --------------------------------------------------------------------- */
 
+/* Raw base pointer of a tagged value (untagged), valid only for heap tags */
+static inline char *minim_untag(mobj v) {
+    return (char *)((uintptr_t)v & ~(uintptr_t)MTAG_MASK);
+}
+
 static size_t object_size(mobj v) {
     mobj tag = v & MTAG_MASK;
     switch (tag) {
-    case MTAG_PAIR: return MINIM_PAIR_BYTES;
-    case MTAG_FLONUM: return MINIM_FLONUM_BYTES;
-    case MTAG_SYMBOL: return MINIM_SYMBOL_BYTES;
+    case MTAG_PAIR: return MINIM_PAIR_SIZE;
+    case MTAG_FLONUM: return MINIM_FLONUM_SIZE;
+    case MTAG_SYMBOL: return MINIM_SYMBOL_SIZE;
     case MTAG_TYPED_OBJ: {
         mobj header = *(mobj *)minim_untag(v);
         mobj sec = header & MSEC_MASK;
         if (sec == MSEC_VECTOR) {
             size_t length = (size_t)(header >> 4);
-            return minim_vector_bytes(length);
+            return minim_vector_size(length);
         }
         /* fall-through: unknown typed object — should not happen in v1 */
         fprintf(stderr, "minim: gc: unknown secondary tag %lx\n",
@@ -182,6 +186,13 @@ static mobj scan_tag_get(char *base_start, char *obj_base) {
     return scan_tags[idx];
 }
 
+/* True for "leaf" values that the GC never traces: fixnums and immediates.
+ * A fixnum has tag 0; an immediate has tag 6 (MTAG_IMMEDIATE). */
+static inline int minim_is_leaf(mobj v) {
+    mobj tag = v & MTAG_MASK;
+    return tag == MTAG_FIXNUM || tag == MTAG_IMMEDIATE;
+}
+
 /* forward_tagged: copy + record tag */
 static void forward_tagged(mobj *root, char *to_base) {
     mobj v = *root;
@@ -237,13 +248,13 @@ static void do_collect(void) {
         mobj tag = scan_tag_get(heap.from_base, heap.scan);
         size_t sz = 0;
         switch (tag) {
-        case MTAG_PAIR:    sz = MINIM_PAIR_BYTES; break;
-        case MTAG_FLONUM:  sz = MINIM_FLONUM_BYTES; break;
-        case MTAG_SYMBOL:  sz = MINIM_SYMBOL_BYTES; break;
+        case MTAG_PAIR:    sz = MINIM_PAIR_SIZE; break;
+        case MTAG_FLONUM:  sz = MINIM_FLONUM_SIZE; break;
+        case MTAG_SYMBOL:  sz = MINIM_SYMBOL_SIZE; break;
         case MTAG_TYPED_OBJ: {
             mobj header = ((mobj *)heap.scan)[0];
             size_t length = (size_t)(header >> 4);
-            sz = minim_vector_bytes(length);
+            sz = minim_vector_size(length);
             break;
         }
         default:
