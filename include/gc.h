@@ -18,6 +18,12 @@
 #define MINIM_FLONUM_SIZE 16
 #define MINIM_SYMBOL_SIZE 16
 
+/* Vector length is packed into the upper 60 bits of the type word
+ * (`(length << 4) | MSEC_VECTOR`), so anything past 2^60 - 1 would lose
+ * bits on the way in. The byte-size formula `8 + 8 * length` also stays
+ * well clear of size_t overflow at this bound. */
+#define MINIM_VECTOR_MAX_LENGTH (((size_t)1 << 60) - 1)
+
 static inline size_t minim_vector_size(size_t length) {
     return MINIM_ALIGN(8 + 8 * length);
 }

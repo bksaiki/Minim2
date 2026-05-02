@@ -1,6 +1,8 @@
 #include "minim.h"
 #include "gc.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Defined in symbol.c. Tears down the intern table; must run before
@@ -40,10 +42,7 @@ mobj Mflonum(double d) {
 mobj Mvector(size_t length, mobj fill) {
     MINIM_GC_FRAME_BEGIN;
     MINIM_GC_PROTECT(fill);
-    size_t sz = (size_t)(8 + 8 * length);
-    /* MINIM_ALIGN rounds up to 16 */
-    sz = (sz + 15) & ~(size_t)15;
-    char *p = gc_alloc(sz);
+    char *p = gc_alloc(minim_vector_size(length));
     mobj header = ((mobj)length << 4) | MSEC_VECTOR;
     ((mobj *)p)[0] = header;
     mobj *slots = (mobj *)p + 1;
