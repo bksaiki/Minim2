@@ -1,0 +1,66 @@
+# Writer TODO
+
+Tracker for the s-expression printer. Source of truth for the legacy
+implementation: `old_writer.c` at the project root. The new writer lives
+in `src/writer.c` with its public API in `include/writer.h`.
+
+The runtime in v1 supports six concrete types — fixnum, pair, flonum,
+symbol, vector — plus four immediates (`#t`, `#f`, `'()`, `eof`). Writer
+features that depend on types we haven't built yet (characters, strings,
+procedures, ports, modules) are intentionally deferred.
+
+## Phase 1 — output sink
+- [x] `Mwrite(mobj, FILE *)` writes one datum to a stream
+- [x] Tests capture output via `open_memstream` and `strcmp`
+
+## Phase 2 — features whose types already exist
+- [x] Immediates: `#t`, `#f`, `()`, `#<eof>`
+- [x] Fixnums: decimal, signed
+- [x] Flonums: shortest reasonable form, with `.0` suffix for
+      integer-valued doubles, plus `+inf.0` / `-inf.0` / `+nan.0`
+- [x] Symbols: bare name (no `|...|` quoting yet)
+- [x] Lists / pairs: proper and improper, with `.` between cdr and tail
+- [x] Vectors: `#(...)`
+- [x] Round-trip with `Mread`: writing a parsed datum and re-parsing it
+      produces an `eq?`/structurally-equal value for the supported types
+
+## Phase 3 — runtime supports the type, writer does not yet
+- [ ] `display` mode for upcoming string/char types — currently the API
+      is `write`-style only; once strings exist we need `Mdisplay` or a
+      mode flag.
+- [ ] Quote/quasiquote/unquote-splicing pretty form: write `(quote x)`
+      back as `'x`, `(quasiquote x)` as `` `x ``, etc.
+
+## Phase 4 — features blocked on missing types
+These cannot be implemented until the corresponding runtime type lands.
+The legacy `old_writer.c` already has the syntax for each.
+
+- [ ] Characters `#\<name>`/`#\<single>` — needs the char type. Named
+      chars: `alarm`, `backspace`, `tab`, `newline`, `vtab`, `page`,
+      `return`, `esc`, `space`, `delete`, `nul`.
+- [ ] Strings `"..."` with escapes (`\n`, `\t`, `\\`, `\"`, etc.).
+- [ ] Procedures: `#<procedure>` / `#<procedure:name>` — needs closures
+      and primops.
+- [ ] Ports: `#<input-port>`, `#<output-port>`.
+- [ ] Continuations: `#<procedure>` (in old writer).
+- [ ] Modules: `#<module:path subpath>`.
+- [ ] Multiple-values marker `#<mvvalues>` and `#<void>` / `#<unbound>`
+      sentinels.
+- [ ] Boxes `#&datum`.
+
+## Phase 5 — robustness and ergonomics
+- [ ] Cycle detection in lists/vectors so circular structures print
+      something instead of looping (`#0=(...)` / `#0#`-style labels, or
+      an abort with a clear message as a stopgap).
+- [ ] Symbols with delimiter or whitespace characters need `|...|`
+      escape form to preserve readability.
+- [ ] Optional pretty-printer (line breaks, indentation) once the basic
+      writer is settled.
+- [ ] Configurable output radix for fixnums (`#x`, `#b`, `#o`).
+
+## Out of scope for now
+- `(display ...)` distinct from `(write ...)` — collapse to a single
+  function until strings/chars land.
+- Bytevectors `#u8(...)`.
+- Source-location tracking on output.
+- Custom user-defined writer hooks.

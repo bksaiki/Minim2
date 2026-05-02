@@ -13,6 +13,7 @@ set(MINIM_RUNTIME_SOURCES
     src/parser.c
     src/symbol.c
     src/system.c
+    src/writer.c
 )
 
 add_executable(minim
