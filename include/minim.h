@@ -177,7 +177,7 @@ static inline mobj Mvector_ref(mobj v, size_t i) {
 }
 
 /* Generic typed-object slot count and slot access. Works for every
- * typed-object kind (vector, kont, closure, env, prim, cont) because
+ * typed-object kind (vector, kont, env, prim) because
  * they all share the `(slot_count << 4) | sec` header layout. */
 static inline size_t Mtyped_obj_slots(mobj v) {
     return (size_t)(*((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ)) >> 4);

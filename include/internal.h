@@ -14,8 +14,8 @@ void symbol_shutdown(void);
  * stored as a fixnum in the prim object's slot 3. */
 size_t prim_fn_register(Mprim_fn fn);
 
-/* Defined in eval.c. Interns the special-form symbols, registers the
- * eval-loop state slots as global GC roots, and seeds them. */
+/* Defined in eval.c. Registers the eval-loop state slots as global GC roots,
+ * and seeds them. */
 void eval_init(void);
 
 /* Defined in eval.c. Resets the primitive-function table index, the

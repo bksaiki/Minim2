@@ -21,7 +21,7 @@ representation cheap and trace-friendly.
 
 ## Scope
 
-**Special forms supported in v1**: `quote`, `if`, `lambda`, `set!`,
+**Special forms supported in v1**: `quote`, `if`, `let`, `lambda`, `set!`,
 `define`, `begin`, `call/cc`. Sugar (`let`, `let*`, `letrec`, `cond`,
 `and`, `or`, `when`, `unless`) is deferred to a later macro/desugar
 layer.

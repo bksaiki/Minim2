@@ -156,11 +156,10 @@ static void scan_fields(char *base, mobj tag, char *to_base) {
          * dictates *interpretation* (which slot means what), but the
          * GC only needs to know that every slot is either an mobj
          * (forwarded) or a leaf-tagged raw word (no-op via
-         * minim_is_leaf inside forward_tagged). MSEC_PRIM's fnptr slot
-         * is a function pointer cast to mobj; on every supported
-         * platform it is at least 8-byte aligned, so its low 3 bits
-         * read as MTAG_FIXNUM and forward_tagged short-circuits as a
-         * leaf — the bytes are preserved verbatim across collections. */
+         * minim_is_leaf inside forward_tagged). For MSEC_PRIM, the
+         * payload stores a leaf-tagged fixnum index into an out-of-heap
+         * function table, so forward_tagged naturally short-circuits
+         * without tracing it. */
         mobj header = ((mobj *)base)[0];
         size_t slots = (size_t)(header >> 4);
         mobj *payload = (mobj *)base + 1;
