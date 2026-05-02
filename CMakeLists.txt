@@ -9,6 +9,7 @@ option(MINIM_GC_STRESS "Trigger a full GC on every allocation (debug)" OFF)
 
 set(MINIM_RUNTIME_SOURCES
     src/alloc.c
+    src/eval.c
     src/gc.c
     src/read.c
     src/symbol.c

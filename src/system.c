@@ -11,6 +11,7 @@ void Minit(void) {
 }
 
 void Mshutdown(void) {
+    eval_shutdown();
     symbol_shutdown();
     gc_shutdown();
 

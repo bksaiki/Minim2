@@ -43,9 +43,34 @@ typedef unsigned char mbyte;
 
 #define MTAG_MASK       ((mobj)0x7)
 
-/* Secondary tags for typed objects (low 4 bits of the type word) */
+/* Secondary tags for typed objects (low 4 bits of the type word).
+ *
+ * Every typed object shares the same on-heap shape: a header word
+ *   (slot_count << 4) | secondary_tag
+ * followed by `slot_count` payload slots, each one machine word wide
+ * (mobj or a fixnum-shifted raw word). The GC traces every payload
+ * slot uniformly; only the secondary tag's *interpretation* differs
+ * between kinds. See docs/EVAL.md for the per-kind slot layout. */
 #define MSEC_VECTOR     ((mobj)0x0)
+#define MSEC_KONT       ((mobj)0x1)  /* spaghetti-stack frame */
+#define MSEC_CLOSURE    ((mobj)0x2)  /* user-defined procedure */
+#define MSEC_ENV        ((mobj)0x3)  /* lexical environment frame */
+#define MSEC_PRIM       ((mobj)0x4)  /* built-in procedure */
+#define MSEC_CONT       ((mobj)0x5)  /* first-class captured continuation */
 #define MSEC_MASK       ((mobj)0xF)
+
+/* Continuation frame kinds, stored as a fixnum in slot 0 of an
+ * MSEC_KONT typed object. The constants are pre-shifted (Mfixnum(N))
+ * so they read as MTAG_FIXNUM (a leaf) to the GC. See docs/EVAL.md
+ * for the per-kind extra slots. KONT_EXC is reserved for the future
+ * exception-handler frame and is not pushed in v1. */
+#define KONT_HALT       ((mobj)(0 << 3))
+#define KONT_IF         ((mobj)(1 << 3))
+#define KONT_SEQ        ((mobj)(2 << 3))
+#define KONT_APP        ((mobj)(3 << 3))
+#define KONT_SET        ((mobj)(4 << 3))
+#define KONT_DEFINE     ((mobj)(5 << 3))
+#define KONT_EXC        ((mobj)(6 << 3))
 
 /* Forwarding marker written into the first word of a copied object during GC */
 #define MFORWARD_MARKER ((mobj)0x3E)
@@ -99,6 +124,21 @@ static inline bool Mvectorp(mobj v) {
     return (header & MSEC_MASK) == MSEC_VECTOR;
 }
 
+static inline bool Mhas_secondary(mobj v, mobj sec) {
+    if ((v & MTAG_MASK) != MTAG_TYPED_OBJ) return false;
+    mobj header = *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ));
+    return (header & MSEC_MASK) == sec;
+}
+
+static inline bool Mclosurep(mobj v) { return Mhas_secondary(v, MSEC_CLOSURE); }
+static inline bool Menvp(mobj v)     { return Mhas_secondary(v, MSEC_ENV); }
+static inline bool Mkontp(mobj v)    { return Mhas_secondary(v, MSEC_KONT); }
+static inline bool Mprimp(mobj v)    { return Mhas_secondary(v, MSEC_PRIM); }
+static inline bool Mcontp(mobj v)    { return Mhas_secondary(v, MSEC_CONT); }
+static inline bool Mprocedurep(mobj v) {
+    return Mclosurep(v) || Mprimp(v) || Mcontp(v);
+}
+
 /* ----------------------------------------------------------------------
  * Accessors
  * -------------------------------------------------------------------- */
@@ -125,6 +165,36 @@ static inline mobj Mvector_ref(mobj v, size_t i) {
     return *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i);
 }
 
+/* Generic typed-object slot count and slot access. Works for every
+ * typed-object kind (vector, kont, closure, env, prim, cont) because
+ * they all share the `(slot_count << 4) | sec` header layout. */
+static inline size_t Mtyped_obj_slots(mobj v) {
+    return (size_t)(*((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ)) >> 4);
+}
+static inline mobj Mtyped_obj_ref(mobj v, size_t i) {
+    return *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i);
+}
+
+/* Per-kind accessors. Each just wraps Mtyped_obj_ref with a name that
+ * documents the slot's role; see docs/EVAL.md for layouts. */
+static inline mobj Mclosure_params(mobj v) { return Mtyped_obj_ref(v, 0); }
+static inline mobj Mclosure_body(mobj v)   { return Mtyped_obj_ref(v, 1); }
+static inline mobj Mclosure_env(mobj v)    { return Mtyped_obj_ref(v, 2); }
+static inline mobj Mclosure_name(mobj v)   { return Mtyped_obj_ref(v, 3); }
+
+static inline mobj Menv_rib(mobj v)        { return Mtyped_obj_ref(v, 0); }
+static inline mobj Menv_parent(mobj v)     { return Mtyped_obj_ref(v, 1); }
+
+static inline mobj Mkont_kind(mobj v)      { return Mtyped_obj_ref(v, 0); }
+static inline mobj Mkont_parent(mobj v)    { return Mtyped_obj_ref(v, 1); }
+static inline mobj Mkont_env(mobj v)       { return Mtyped_obj_ref(v, 2); }
+
+static inline mobj Mprim_name(mobj v)      { return Mtyped_obj_ref(v, 0); }
+static inline mobj Mprim_arity_min(mobj v) { return Mtyped_obj_ref(v, 1); }
+static inline mobj Mprim_arity_max(mobj v) { return Mtyped_obj_ref(v, 2); }
+
+static inline mobj Mcont_kont(mobj v)      { return Mtyped_obj_ref(v, 0); }
+
 /* ----------------------------------------------------------------------
  * Mutators
  * -------------------------------------------------------------------- */
@@ -136,6 +206,9 @@ static inline void Mset_cdr(mobj p, mobj v) {
     *((mobj *)((uintptr_t)p - MTAG_PAIR) + 1) = v;
 }
 static inline void Mvector_set(mobj v, size_t i, mobj x) {
+    *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i) = x;
+}
+static inline void Mtyped_obj_set(mobj v, size_t i, mobj x) {
     *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i) = x;
 }
 static inline const char *Msymbol_name(mobj v) {
@@ -157,6 +230,29 @@ mobj Mcons(mobj car, mobj cdr);
 mobj Mvector(size_t length, mobj fill);
 mobj Mflonum(double d);
 mobj Mintern(const char *name);
+
+/* Evaluator object constructors. See docs/EVAL.md. */
+mobj Mclosure(mobj params, mobj body, mobj env, mobj name);
+mobj Menv_extend(mobj rib, mobj parent);
+
+/* Mkont allocates a frame with `extra_slots` slots beyond the
+ * standard (kind, parent, env). The caller fills slots 3..3+extra-1
+ * via Mtyped_obj_set (or via a per-kind constructor below). */
+mobj Mkont(mobj kind, mobj parent, mobj env, size_t extra_slots);
+mobj Mkont_if(mobj parent, mobj env, mobj then_expr, mobj else_expr);
+mobj Mkont_seq(mobj parent, mobj env, mobj rest);
+mobj Mkont_app(mobj parent, mobj env, mobj unev, mobj evald);
+mobj Mkont_set(mobj parent, mobj env, mobj name);
+mobj Mkont_define(mobj parent, mobj env, mobj name);
+
+/* Function pointer for a primitive procedure. Receives the
+ * already-evaluated argument list as a Scheme list and returns one
+ * mobj. The eval loop is in APPLY mode after this returns. */
+typedef mobj (*Mprim_fn)(mobj args);
+mobj Mprim(const char *name, Mprim_fn fn, intptr_t arity_min, intptr_t arity_max);
+Mprim_fn Mprim_fn_of(mobj v);
+
+mobj Mcont(mobj kont);
 
 /* ----------------------------------------------------------------------
  * System
