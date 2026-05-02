@@ -10,11 +10,23 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        gc_stress: [OFF, ON]
+
+    name: build-and-test (stress=${{ matrix.gc_stress }})
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -B build -DCMAKE_C_STANDARD=11 -DCMAKE_C_EXTENSIONS=OFF -DCMAKE_BUILD_TYPE=Debug
+        run: >-
+          cmake -B build
+          -DCMAKE_C_STANDARD=11
+          -DCMAKE_C_EXTENSIONS=OFF
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMINIM_GC_STRESS=${{ matrix.gc_stress }}
 
       - name: Build
         run: cmake --build build
