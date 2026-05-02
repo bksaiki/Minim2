@@ -1,6 +1,6 @@
-# minim2 GC and Runtime — Design
+# Minim | Garbage Collector Design
 
-This document captures the design of the minim2 value representation, allocator, and garbage collector. It is the source of truth for implementation; the task list lives in [`TODO.md`](./TODO.md).
+This document captures the design of Minim's allocator, and garbage collector.
 
 The design is a deliberate slim-down of Chez Scheme's runtime (referenced as `c/alloc.c`, `c/gc.c`, `c/segment.c`, and `boot/ta6le/scheme.h` from the user's local Chez checkout under `~/reference/ChezScheme/`). What we keep: 3-bit pointer tagging, bump-pointer allocation, forwarding-pointer copying GC. What we drop: generational machinery, parallel sweepers, mark-in-place hybrid, write barriers, card tables, dirty-segment lists, chunk pools, locked/immobile objects, stack maps, weak/ephemeron pairs.
 
