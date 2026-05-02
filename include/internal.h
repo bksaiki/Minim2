@@ -1,5 +1,5 @@
-#ifndef _INTERNAL_H_
-#define _INTERNAL_H_
+#ifndef MINIM_INTERNAL_H
+#define MINIM_INTERNAL_H
 
 /* Defined in symbol.c. Initializes the intern table.
  */
@@ -9,4 +9,4 @@ void symbol_init(void);
  * gc_shutdown so we can still read symbol name pointers. */
 void symbol_shutdown(void);
 
-#endif /* _INTERNAL_H_ */
+#endif /* MINIM_INTERNAL_H_ */

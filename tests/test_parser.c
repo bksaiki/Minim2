@@ -203,7 +203,7 @@ static void test_comments(void) {
 
     v = read_one("(1 #;2 3)");
     CHECK(Mpairp(v), "comment: list with datum comment");
-    CHECK(Mfixnum_val(Mcar(v)) == 1, "comment: list cadr=1");
+    CHECK(Mfixnum_val(Mcar(v)) == 1, "comment: list car=1");
     CHECK(Mfixnum_val(Mcar(Mcdr(v))) == 3, "comment: list cadr=3 (2 dropped)");
     Mshutdown();
 }

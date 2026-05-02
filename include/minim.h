@@ -168,7 +168,7 @@ void Mshutdown(void);
  * Interned symbols
  * -------------------------------------------------------------------- */
 
- extern mobj quote_sym;
+extern mobj quote_sym;
 
 /* ----------------------------------------------------------------------
  * Roots: shadow stack + globals
