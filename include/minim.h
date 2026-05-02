@@ -53,10 +53,10 @@ typedef unsigned char mbyte;
  * Immediate values
  * -------------------------------------------------------------------- */
 
-/* Immediate values */
-#define Mfalse     ((mobj)0x06)
 #define Mtrue      ((mobj)0x0E)
-#define Mnull      ((mobj)0x16)
+#define Mfalse     ((mobj)0x06)
+#define Mnull      ((mobj)0x26)
+#define Meof       ((mobj)0x36)
 
 /* ----------------------------------------------------------------------
  * Predicates
@@ -70,6 +70,9 @@ static inline bool Mtruep(mobj v)  {
 }
 static inline bool Mfalsep(mobj v) {
     return v == Mfalse;
+}
+static inline bool Meofp(mobj v)   {
+    return v == Meof;
 }
 static inline bool Mbooleanp(mobj v) {
     return (v & 0xF7) == 0x06; // matches both #t and #f
@@ -142,6 +145,9 @@ static inline const char *Msymbol_name(mobj v) {
  * Constructors
  * -------------------------------------------------------------------- */
 
+static inline mobj Mboolean(bool b) {
+    return b ? Mtrue : Mfalse;
+}
 static inline mobj Mfixnum(intptr_t n) {
     return (mobj)((uintptr_t)n << 3);
 }

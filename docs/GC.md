@@ -24,7 +24,7 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 | `011` | 0x3  | `MTAG_SYMBOL`     | heap base \| 3; 16-byte object (header + name ptr)     |
 | `100` | 0x4  | (reserved)        | unused; future closure or string                       |
 | `101` | 0x5  | (reserved)        | unused; future closure or string                       |
-| `110` | 0x6  | `MTAG_IMMEDIATE`  | constants: `#f=0x06`, `#t=0x0E`, `()=0x16`             |
+| `110` | 0x6  | `MTAG_IMMEDIATE`  | constants: `#f=0x06`, `#t=0x0E`, `()=0x26`, `eof=0x36` |
 | `111` | 0x7  | `MTAG_TYPED_OBJ`  | heap base \| 7; first heap word is a secondary tag     |
 
 ### Why this layout
@@ -33,20 +33,21 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 - **Pair tag = 1** because pairs are by far the most common heap object in Scheme; a 1-bit tag is the smallest cost per `cons`.
 - **Flonum, symbol given dedicated tags** so common predicates (`flonum?`, `symbol?`) are a one-instruction tag check, not a two-step "tag 7 then secondary".
 - **Tag 7 (typed object) is the catch-all** — anything that doesn't justify a primary tag goes here, and the secondary type lives in the first word of the heap object. Vectors are the only inhabitant in v1.
-- **Tag 6 (immediate) collects all the heap-less constants** — `#t`, `#f`, `'()`, and (later) characters, eof, void. They are full-word constants whose bits never collide with a heap pointer.
+- **Tag 6 (immediate) collects all the heap-less constants** — `#t`, `#f`, `'()`, `eof`, and (later) characters, void. They are full-word constants whose bits never collide with a heap pointer.
 - **16-byte alignment** gives us a fourth low bit that we deliberately don't use for tagging — it stays zero on every heap pointer, which lets us spot-check pointer validity in debug builds.
 
 ### Immediate values
 
 ```c
-#define MINIM_FALSE  ((mobj)0x06)   // 0000 0110
-#define MINIM_TRUE   ((mobj)0x0E)   // 0000 1110
-#define MINIM_NULL   ((mobj)0x16)   // 0001 0110
+#define Mfalse  ((mobj)0x06)   // 0000 0110
+#define Mtrue   ((mobj)0x0E)   // 0000 1110
+#define Mnull   ((mobj)0x26)   // 0010 0110
+#define Meof    ((mobj)0x36)   // 0011 0110
 ```
 
 Predicate tricks worth keeping:
-- `(x & 0xF7) == 0x06` matches both `#t` and `#f` ⇒ one-instruction `boolean?`.
-- `x == MINIM_NULL` is exact equality — `'()` has a unique bit pattern.
+- `(x & 0xF7) == 0x06` matches both `#t` and `#f` ⇒ one-instruction `boolean?` (the mask clears bit 3, the only bit that distinguishes them; `()` and `eof` set higher bits and so don't collide).
+- `x == Mnull`, `x == Meof` are exact equality — each has a unique bit pattern.
 
 ### Forward marker
 
