@@ -38,7 +38,7 @@ intentionally deferred.
 These cannot be implemented until the corresponding runtime type lands.
 The legacy `old_writer.c` already has the syntax for each.
 
-- [x] Characters — landed via `docs/agents/chars.md`. Writer
+- [x] Characters — landed via `docs/todos/chars.md`. Writer
       emits the R7RS canonical name for `0x00`/`0x07`/`0x08`/`0x09`
       /`0x0A`/`0x0D`/`0x1B`/`0x20`/`0x7F` (`null`, `alarm`,
       `backspace`, `tab`, `newline`, `return`, `escape`, `space`,

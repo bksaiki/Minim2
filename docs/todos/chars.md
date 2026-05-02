@@ -123,12 +123,12 @@ multi-word encoding.
       char-encoding block alongside the existing `Mimmediate` block.
       The "Why this layout" bullet that listed characters as a
       future addition now treats them as present.
-- [x] `docs/agents/parser.md` Phase 4 character item ticked off,
+- [x] `docs/todos/parser.md` Phase 4 character item ticked off,
       with a one-line summary of the disambiguation rule. Chez
       aliases (`esc`, `linefeed`, `nul`, etc.) explicitly removed
       from the named-char list — only R7RS canonical names are
       accepted.
-- [x] `docs/agents/writer.md` Phase 4 character item ticked off,
+- [x] `docs/todos/writer.md` Phase 4 character item ticked off,
       with the canonical-name spelling rules.
 - [x] `docs/EVAL.md` Scope updated: characters now appear in the
       "value types supported in v1" list with a link to this doc;
@@ -138,7 +138,7 @@ multi-word encoding.
 
 The following char-aware primitives need to exist eventually but
 belong with the rest of the primitive work in
-`docs/agents/eval.md` Phase 6 (primitives). Listed here only as a
+`docs/todos/eval.md` Phase 6 (primitives). Listed here only as a
 reference for what the type ultimately needs to support; do not
 add them as part of the chars feature itself.
 

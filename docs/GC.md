@@ -57,7 +57,7 @@ The runtime's value type is `mobj`, a `uintptr_t`-sized opaque word. Every value
 Predicate tricks worth keeping:
 - `(x & 0xF7) == 0x06` matches both `#t` and `#f` ⇒ one-instruction `boolean?` (the mask clears bit 3, the only bit that distinguishes them; `()` and `eof` set higher bits and so don't collide).
 - `x == Mnull`, `x == Meof` are exact equality — each has a unique bit pattern.
-- `(x & 0xFF) == 0x16` ⇒ one-instruction `char?`. The 8-bit tag boundary leaves bits 8-63 clean for the codepoint, so `Mchar_val` is just one shift with no mask. See `docs/agents/chars.md` for the full design.
+- `(x & 0xFF) == 0x16` ⇒ one-instruction `char?`. The 8-bit tag boundary leaves bits 8-63 clean for the codepoint, so `Mchar_val` is just one shift with no mask. See `docs/todos/chars.md` for the full design.
 
 ### Forward marker
 

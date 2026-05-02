@@ -225,7 +225,7 @@ across each allocation.
   TCO automatically; no analysis needed.
 - Bignums, rationals, complex numbers.
 - Strings (blocked on the runtime type not existing yet). Characters
-  exist — see `docs/agents/chars.md` — but their primitive surface
+  exist — see `docs/todos/chars.md` — but their primitive surface
   (`char?`, `char->integer`, etc.) lands as part of Phase 6.
 - `delay`/`force`/promises.
 - Continuation marks.
