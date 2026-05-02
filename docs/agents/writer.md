@@ -66,8 +66,21 @@ The legacy `old_writer.c` already has the syntax for each.
         another feature that wants a heap-pointer hash map (e.g.
         `equal?`, structural equality), so the infrastructure pays for
         itself twice.
-- [ ] Symbols with delimiter or whitespace characters need `|...|`
-      escape form to preserve readability.
+- [ ] Escape symbol names that aren't bare-readable. Today `Mwrite`
+      emits the interned name verbatim, which silently breaks the
+      "output is parseable s-expression" contract for perfectly valid
+      symbols whose names contain delimiters or look like other
+      datums. Examples that round-trip incorrectly today:
+      - `"a b"` — prints `a b`, parses as two tokens.
+      - `"("` — prints `(`, parses as the start of a list.
+      - `"#t"` — prints `#t`, parses as the boolean.
+      - `"42"` — prints `42`, parses as a fixnum.
+      Until this lands, `Mwrite` is only safe for symbols whose names
+      are bare-readable (no delimiters, doesn't start with `#`, isn't
+      all-digits/sign-prefixed-digits, etc.). Fix: emit `|...|`
+      around the name when needed (R7RS), with internal `|` and `\`
+      escaped as `\|` and `\\`. Once both `Mread` and `Mwrite` agree
+      on the `|...|` form, this can be exposed as a general printer.
 - [ ] Optional pretty-printer (line breaks, indentation) once the basic
       writer is settled.
 - [ ] Configurable output radix for fixnums (`#x`, `#b`, `#o`).
