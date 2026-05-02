@@ -2,8 +2,9 @@
 
 #include <stdio.h>
 
-int main(void)
-{
-    printf("minim2\n");
+int main(void) {
+    Minit();
+
+    Mshutdown();
     return 0;
 }
