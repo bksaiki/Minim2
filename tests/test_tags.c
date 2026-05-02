@@ -91,6 +91,83 @@ static void test_fixnum_zero_tag(void) {
     CHECK(Mfixnum_val(sum) == 8, "fixnum: 3+5==8 without untag");
 }
 
+/* -----------------------------------------------------------------------
+ * Phase 1 (chars) — Mchar / Mcharp / Mchar_val round-trip
+ * --------------------------------------------------------------------- */
+
+static void test_char_roundtrip(void) {
+    /* Codepoints spanning ASCII printables, control characters, the
+     * NUL boundary, max BMP, and an SMP codepoint (emoji range). */
+    mchar values[] = {
+        0x00,      /* NUL */
+        0x07,      /* alarm */
+        0x0A,      /* newline */
+        0x20,      /* space */
+        0x41,      /* 'A' */
+        0x7E,      /* '~' — last printable ASCII */
+        0x7F,      /* delete */
+        0xFF,      /* end of Latin-1 */
+        0xFFFF,    /* end of BMP minus boundary */
+        0x10000,   /* first SMP codepoint */
+        0x1F600,   /* 😀 (grinning face) */
+        0x10FFFF,  /* max Unicode codepoint */
+    };
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+        mobj v = Mchar(values[i]);
+        CHECK(Mcharp(v), "char: predicate");
+        CHECK(Mchar_val(v) == values[i], "char: value round-trip");
+        /* Char carries MTAG_IMMEDIATE so the GC's existing leaf check
+         * covers it without any new arm. */
+        CHECK((v & MTAG_MASK) == MTAG_IMMEDIATE, "char: tag IMMEDIATE");
+    }
+}
+
+static void test_char_disjoint_from_other_immediates(void) {
+    /* Predicate doesn't fire for any non-char value. */
+    CHECK(!Mcharp(Mfalse), "char: not falsep");
+    CHECK(!Mcharp(Mtrue),  "char: not truep");
+    CHECK(!Mcharp(Mnull),  "char: not nullp");
+    CHECK(!Mcharp(Mvoid),  "char: not voidp");
+    CHECK(!Mcharp(Meof),   "char: not eofp");
+    CHECK(!Mcharp(MFORWARD_MARKER), "char: not forward marker");
+
+    /* And not for non-immediates either. */
+    CHECK(!Mcharp(Mfixnum(0x16)),  "char: fixnum != char");
+    CHECK(!Mcharp(Mfixnum(0x41)),  "char: fixnum 'A'-codepoint != char");
+
+    /* Other-immediate predicates don't fire for chars. */
+    mchar codepoints[] = { 0x00, 0x41, 0x7F, 0x10FFFF };
+    for (size_t i = 0; i < sizeof(codepoints) / sizeof(codepoints[0]); i++) {
+        mobj c = Mchar(codepoints[i]);
+        CHECK(!Mfalsep(c),  "char: not Mfalsep");
+        CHECK(!Mtruep(c),   "char: not Mtruep");
+        CHECK(!Mnullp(c),   "char: not Mnullp");
+        CHECK(!Mvoidp(c),   "char: not Mvoidp");
+        CHECK(!Meofp(c),    "char: not Meofp");
+        CHECK(!Mfixnump(c), "char: not Mfixnump");
+        CHECK(!Mpairp(c),   "char: not Mpairp");
+        CHECK(!Mflonump(c), "char: not Mflonump");
+        CHECK(!Msymbolp(c), "char: not Msymbolp");
+        CHECK(!Mclosurep(c),"char: not Mclosurep");
+        /* Crucially: Mbooleanp uses (v & 0xF7) == 0x06; chars must
+         * not alias as booleans. */
+        CHECK(!Mbooleanp(c), "char: not Mbooleanp");
+    }
+}
+
+static void test_char_low_byte(void) {
+    /* The encoding follows Chez: the low byte is the type tag, the
+     * codepoint occupies the upper bits. Verify directly. */
+    CHECK((Mchar(0x00) & 0xFF) == 0x16,
+          "char: tag byte == 0x16 (codepoint 0)");
+    CHECK((Mchar(0x41) & 0xFF) == 0x16,
+          "char: tag byte == 0x16 (codepoint 'A')");
+    CHECK(Mchar(0x00) == 0x16,
+          "char: codepoint 0 encodes to exactly 0x16");
+    CHECK(Mchar(0x41) == ((mobj)0x41 << 8 | 0x16),
+          "char: codepoint 'A' encodes to (0x41 << 8) | 0x16");
+}
+
 int main(void) {
     test_init_shutdown();
     test_fixnum_roundtrip();
@@ -98,6 +175,9 @@ int main(void) {
     test_immediate_constants();
     test_immediate_values();
     test_fixnum_zero_tag();
+    test_char_roundtrip();
+    test_char_disjoint_from_other_immediates();
+    test_char_low_byte();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

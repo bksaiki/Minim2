@@ -92,6 +92,16 @@ typedef unsigned char mbyte;
 #define Mvoid     (Mimmediate(0x5)) // 0x2E
 #define Meof      (Mimmediate(0x6)) // 0x36
 
+/* Character immediate. The low byte (0x16) is the type tag — chosen to
+ * match Chez Scheme's `type_char` so the predicate is a single 8-bit
+ * mask. The codepoint lives in bits 8 and up; we have 56 free bits on
+ * a 64-bit host, comfortably more than Unicode needs (max 0x10FFFF
+ * fits in 21). The low 3 bits (110) are MTAG_IMMEDIATE, so the GC's
+ * existing leaf check covers chars without any new arm. */
+#define MCHAR_TAG ((mobj)0x16)
+#define Mchar(c)        ((mobj)(((uintptr_t)(c) << 8) | MCHAR_TAG))
+#define Mchar_val(v)    ((mchar)((uintptr_t)(v) >> 8))
+
 /* ----------------------------------------------------------------------
  * Predicates
  * -------------------------------------------------------------------- */
@@ -110,6 +120,9 @@ static inline bool Meofp(mobj v)   {
 }
 static inline bool Mvoidp(mobj v)  {
     return v == Mvoid;
+}
+static inline bool Mcharp(mobj v)  {
+    return ((uintptr_t)v & 0xFF) == MCHAR_TAG;
 }
 static inline bool Mbooleanp(mobj v) {
     return (v & 0xF7) == 0x06; // matches both #t and #f
