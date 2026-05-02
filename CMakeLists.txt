@@ -10,7 +10,9 @@ option(MINIM_GC_STRESS "Trigger a full GC on every allocation (debug)" OFF)
 set(MINIM_RUNTIME_SOURCES
     src/alloc.c
     src/gc.c
+    src/parser.c
     src/symbol.c
+    src/system.c
 )
 
 add_executable(minim
