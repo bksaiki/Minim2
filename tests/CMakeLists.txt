@@ -18,3 +18,4 @@ endfunction()
 
 minim_add_test(test_tags)
 minim_add_test(test_alloc)
+minim_add_test(test_gc)

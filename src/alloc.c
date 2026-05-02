@@ -23,7 +23,7 @@ mobj Mcons(mobj car, mobj cdr) {
     return (mobj)((uintptr_t)p | MTAG_PAIR);
 }
 
-mobj Mmake_flonum(double d) {
+mobj Mflonum(double d) {
     MINIM_GC_FRAME_BEGIN;
     char *p = gc_alloc(16);
     ((mobj *)p)[0] = MTAG_FLONUM; /* header */
@@ -32,7 +32,7 @@ mobj Mmake_flonum(double d) {
     return (mobj)((uintptr_t)p | MTAG_FLONUM);
 }
 
-mobj Mmake_vector(size_t length, mobj fill) {
+mobj Mvector(size_t length, mobj fill) {
     MINIM_GC_FRAME_BEGIN;
     MINIM_GC_PROTECT(fill);
     size_t sz = (size_t)(8 + 8 * length);

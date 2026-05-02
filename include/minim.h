@@ -140,8 +140,8 @@ void Minit(void);
 void Mshutdown(void);
 
 mobj Mcons(mobj car, mobj cdr);
-mobj Mmake_vector(size_t length, mobj fill);
-mobj Mmake_flonum(double d);
+mobj Mvector(size_t length, mobj fill);
+mobj Mflonum(double d);
 mobj Mintern(const char *name);
 
 /* ----------------------------------------------------------------------

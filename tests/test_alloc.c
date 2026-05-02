@@ -35,7 +35,7 @@ static void test_cons_list_1000(void) {
 
 static void test_flonum_heap_roundtrip(void) {
     Minit();
-    mobj v = Mmake_flonum(3.14159);
+    mobj v = Mflonum(3.14159);
     CHECK(Mflonump(v), "flonum: tag");
     CHECK(Mflonum_val(v) == 3.14159, "flonum: value round-trip");
     Mshutdown();
@@ -45,7 +45,7 @@ static void test_vector_smoke(void) {
     Minit();
     MINIM_GC_FRAME_BEGIN;
 
-    mobj v = Mmake_vector(10, Mfixnum(0));
+    mobj v = Mvector(10, Mfixnum(0));
     MINIM_GC_PROTECT(v);
 
     CHECK(Mvectorp(v), "vector: vectorp");

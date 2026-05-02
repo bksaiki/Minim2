@@ -113,42 +113,24 @@ static size_t object_size(mobj v) {
     }
 }
 
-static void forward(mobj *root) {
-    mobj v = *root;
-    if (minim_is_leaf(v)) return;
-
-    char *base = minim_untag(v);
-    mobj first = ((mobj *)base)[0];
-
-    if (first == MFORWARD_MARKER) {
-        /* Already copied; install the forwarded pointer */
-        *root = ((mobj *)base)[1];
-        return;
-    }
-
-    size_t sz = object_size(v);
-    char *new_base = heap.ap;
-    memcpy(new_base, base, sz);
-    heap.ap += sz;
-
-    mobj new_typed = (mobj)((uintptr_t)new_base | (v & MTAG_MASK));
-    ((mobj *)base)[0] = MFORWARD_MARKER;
-    ((mobj *)base)[1] = new_typed;
-    *root = new_typed;
-}
-
 /* -----------------------------------------------------------------------
  * gc_collect
  * --------------------------------------------------------------------- */
 
+/* Forward declaration — scan_fields and forward_tagged are mutually
+ * referenced (scan walks each object's slots via forward_tagged). */
+static void forward_tagged(mobj *root, char *to_base);
+
 /* Typed scan: given a to-space pointer (base address + original tag),
- * forward all pointer fields inside it. */
-static void scan_fields(char *base, mobj tag) {
+ * forward all pointer fields inside it. New objects copied as a result
+ * land in to-space and must have their tags recorded for the scan loop,
+ * so we route through forward_tagged rather than the bare forward(). */
+static void scan_fields(char *base, mobj tag, char *to_base) {
     switch (tag) {
     case MTAG_PAIR: {
         mobj *slots = (mobj *)base;
-        forward(&slots[0]);
-        forward(&slots[1]);
+        forward_tagged(&slots[0], to_base);
+        forward_tagged(&slots[1], to_base);
         break;
     }
     case MTAG_FLONUM:
@@ -164,7 +146,7 @@ static void scan_fields(char *base, mobj tag) {
             size_t length = (size_t)(header >> 4);
             mobj *slots = (mobj *)base + 1;
             for (size_t i = 0; i < length; i++)
-                forward(&slots[i]);
+                forward_tagged(&slots[i], to_base);
         }
         break;
     }
@@ -227,36 +209,11 @@ static void forward_tagged(mobj *root, char *to_base) {
     scan_tag_set(to_base, new_base, tag);
 }
 
-static void grow_heap(void) {
-    size_t new_sz = heap.space_bytes * 2;
-    char *new_from = heap_mmap(new_sz);
-    char *new_to = heap_mmap(new_sz);
-
-    /* Copy live data from current to-space into new_from using another
-     * Cheney pass (to-space is already compacted). */
-    size_t live = (size_t)(heap.ap - heap.to_base);
-    memcpy(new_from, heap.to_base, live);
-
-    munmap(heap.from_base, heap.space_bytes);
-    munmap(heap.to_base, heap.space_bytes);
-
-    heap.from_base = new_from;
-    heap.from_end = new_from + new_sz;
-    heap.to_base = new_to;
-    heap.to_end = new_to + new_sz;
-    heap.ap = new_from + live;
-    heap.space_bytes = new_sz;
-
-    /* Note: scan_tags and forwarding pointers in the old spaces are now
-     * gone, but the live objects in new_from are a verbatim copy of
-     * to-space — pointers within them still point into new_from because
-     * we memcpy'd the whole region and offsets are preserved. */
-    scan_tags_ensure(new_sz);
-}
-
-void gc_collect(size_t need) {
-    scan_tags_ensure(heap.space_bytes);
-
+/* One Cheney collection pass: swap spaces, copy live roots into the new
+ * from-space (current to-space at entry), scan, done. Does not grow.
+ * Caller must ensure scan_tags is sized for the larger of the two
+ * semispaces before calling. */
+static void do_collect(void) {
     /* 1. Swap spaces */
     char *tmp_base = heap.from_base;
     char *tmp_end = heap.from_end;
@@ -293,13 +250,42 @@ void gc_collect(size_t need) {
             fprintf(stderr, "minim: gc scan: bad tag %lx\n", (unsigned long)tag);
             abort();
         }
-        scan_fields(heap.scan, tag);
+        scan_fields(heap.scan, tag, heap.from_base);
         heap.scan += sz;
     }
+}
 
-    /* 5. Grow if needed */
-    if (heap.ap + need > heap.from_end)
-        grow_heap();
+void gc_collect(size_t need) {
+    scan_tags_ensure(heap.space_bytes);
+    do_collect();
+
+    /* Grow if the post-collect heap still can't fit `need`. We allocate
+     * a bigger to-space, then run a second collection that compacts live
+     * data out of the just-collected from-space into the new bigger
+     * from-space. Repeat until `need` fits. */
+    while (heap.ap + need > heap.from_end) {
+        size_t old_sz = heap.space_bytes;
+        size_t new_sz = old_sz * 2;
+        size_t live = (size_t)(heap.ap - heap.from_base);
+        while (new_sz < live + need) new_sz *= 2;
+
+        /* Replace the (garbage) to-space with a bigger fresh one. */
+        munmap(heap.to_base, old_sz);
+        heap.to_base = heap_mmap(new_sz);
+        heap.to_end = heap.to_base + new_sz;
+        scan_tags_ensure(new_sz);
+
+        /* Run another collection: live data flows from the smaller
+         * from-space into the bigger to-space. After do_collect the
+         * smaller space has become to-space again. */
+        do_collect();
+
+        /* Replace the now-undersized to-space with one matching new_sz. */
+        munmap(heap.to_base, old_sz);
+        heap.to_base = heap_mmap(new_sz);
+        heap.to_end = heap.to_base + new_sz;
+        heap.space_bytes = new_sz;
+    }
 }
 
 char *gc_alloc(size_t n) {
