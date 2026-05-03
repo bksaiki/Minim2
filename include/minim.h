@@ -366,6 +366,26 @@ mobj Mread(mreader *r);
 void Mwrite(mobj v, FILE *out);
 
 /* ----------------------------------------------------------------------
+ * Structural equality
+ *
+ * Recurses into pair car/cdr and vector slots; compares flonums
+ * numerically; falls back to word-equality for everything else
+ * (fixnums, symbols-by-interning, immediates, characters, closures,
+ * primitives, continuations, environments).
+ *
+ * Naive — does not detect cycles. Circular structures will not
+ * terminate. The intended fix is the SRFI-38 sharing-detection pass,
+ * which is also what the writer wants for cycle-aware printing; the
+ * shared infrastructure lands when one of the two callers needs it
+ * badly enough to justify the heap-pointer hash map.
+ *
+ * Mequal does not allocate, so callers do not need to protect either
+ * argument across the call.
+ * -------------------------------------------------------------------- */
+
+bool Mequal(mobj a, mobj b);
+
+/* ----------------------------------------------------------------------
  * Interned symbols
  * -------------------------------------------------------------------- */
 

@@ -13,6 +13,7 @@ option(MINIM_GC_STRESS "Trigger a full GC on every allocation (debug)" OFF)
 # target.
 add_library(minim_rt STATIC
     src/alloc.c
+    src/equal.c
     src/eval.c
     src/gc.c
     src/prims.c

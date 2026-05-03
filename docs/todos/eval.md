@@ -176,8 +176,15 @@ type-checking / contract layer belongs above this one.
         the longer accessors `caar`/`cadr`/... can land later.)
       - [x] Vectors: `make-vector`, `vector`, `vector-ref`,
         `vector-set!`, `vector-length`.
-      - [x] Equality: `eq?`, `eqv?`. `equal?` deferred until we have
-        cycle-aware structural equality.
+      - [x] Equality: `eq?`, `eqv?`, `equal?`. `equal?` is naive
+        structural recursion (cdr loop, recurse into car / vector
+        slots, flonum compares numerically). Cycle detection is
+        deferred — circular structures will not terminate. The
+        eventual fix is the SRFI-38 sharing pass shared with the
+        writer; lands when one caller wants it badly enough to pay
+        for the heap-pointer hash map. `Mequal` lives in
+        `src/equal.c` so non-prim callers (future `member`/`assoc`,
+        hashtables, tests) can use it directly.
       - [ ] Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
         `quotient`, `remainder`, `zero?`, `positive?`, `negative?`,
         `abs`. Mixed fixnum/flonum follows R7RS contagion (any

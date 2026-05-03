@@ -838,6 +838,53 @@ static void test_equality(void) {
     CHECK(Mtruep(eval_str("(eqv? 'foo 'foo)")),          "eqv?: same symbol");
     CHECK(Mfalsep(eval_str("(eqv? (cons 1 2) (cons 1 2))")),
                                                           "eqv?: distinct pairs are not eqv");
+
+    /* equal?: structural recursion into pairs and vectors. */
+    CHECK(Mtruep(eval_str("(equal? 1 1)")),              "equal?: leaf");
+    CHECK(Mtruep(eval_str("(equal? 'foo 'foo)")),        "equal?: symbol");
+    CHECK(Mtruep(eval_str("(equal? '() '())")),          "equal?: ()");
+    CHECK(Mtruep(eval_str("(equal? #\\a #\\a)")),        "equal?: char");
+
+    /* Distinct cons cells with the same shape. */
+    CHECK(Mtruep(eval_str("(equal? (cons 1 2) (cons 1 2))")),
+                                                          "equal?: distinct pairs, same shape");
+    CHECK(Mfalsep(eval_str("(equal? (cons 1 2) (cons 1 3))")),
+                                                          "equal?: pairs differ in cdr");
+    CHECK(Mfalsep(eval_str("(equal? (cons 1 2) (cons 0 2))")),
+                                                          "equal?: pairs differ in car");
+
+    /* Lists, including nesting and improper. */
+    CHECK(Mtruep(eval_str("(equal? '(1 2 3) '(1 2 3))")),
+                                                          "equal?: equal lists");
+    CHECK(Mfalsep(eval_str("(equal? '(1 2 3) '(1 2))")),
+                                                          "equal?: lists of different length");
+    CHECK(Mtruep(eval_str("(equal? '(1 (2 3) 4) '(1 (2 3) 4))")),
+                                                          "equal?: nested list");
+    CHECK(Mfalsep(eval_str("(equal? '(1 (2 3) 4) '(1 (2 9) 4))")),
+                                                          "equal?: nested differs");
+    CHECK(Mtruep(eval_str("(equal? '(1 . 2) '(1 . 2))")),
+                                                          "equal?: improper");
+
+    /* Vectors. */
+    CHECK(Mtruep(eval_str("(equal? #(1 2 3) #(1 2 3))")),
+                                                          "equal?: vectors");
+    CHECK(Mfalsep(eval_str("(equal? #(1 2 3) #(1 2 4))")),
+                                                          "equal?: vectors differ");
+    CHECK(Mfalsep(eval_str("(equal? #(1 2) #(1 2 3))")),
+                                                          "equal?: vector lengths differ");
+    CHECK(Mtruep(eval_str("(equal? #(1 #(2 3)) #(1 #(2 3)))")),
+                                                          "equal?: nested vectors");
+
+    /* Cross-type: a pair and a vector with the same elements differ. */
+    CHECK(Mfalsep(eval_str("(equal? '(1 2) #(1 2))")),
+                                                          "equal?: pair vs vector");
+
+    /* equal? recurses *into* pairs/vectors but treats opaque values
+     * (procedures) as eq?. Two distinct closures aren't equal? even
+     * if they would compute the same answer. */
+    CHECK(Mfalsep(eval_str(
+        "(equal? (lambda (x) x) (lambda (x) x))")),
+                                                          "equal?: distinct closures");
     Mshutdown();
 }
 
