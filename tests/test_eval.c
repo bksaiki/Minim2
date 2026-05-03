@@ -888,6 +888,99 @@ static void test_equality(void) {
     Mshutdown();
 }
 
+static void test_hash(void) {
+    Minit();
+
+    /* All a/b pairs in this test must hold across allocations under
+     * stress mode — every `eval_str`/`Mflonum` call is a potential
+     * GC. Protect a/b for the whole test. */
+    MINIM_GC_FRAME_BEGIN;
+    mobj a = Mfalse, b = Mfalse;
+    MINIM_GC_PROTECT(a);
+    MINIM_GC_PROTECT(b);
+
+    /* --- invariant: Mequal(a, b) ⇒ Mhash(a) == Mhash(b) --- */
+
+    /* Word-equal leaves trivially agree. */
+    a = Mfixnum(42);  b = Mfixnum(42);
+    CHECK(Mhash(a) == Mhash(b), "hash: equal fixnums");
+
+    /* Distinct heap objects with the same shape: lists. */
+    a = eval_str("'(1 2 3)");
+    b = eval_str("(list 1 2 3)");
+    CHECK(Mequal(a, b),         "hash precondition: lists are equal");
+    CHECK(Mhash(a) == Mhash(b), "hash: equal lists hash same");
+
+    /* Same for vectors. */
+    a = eval_str("#(1 2 3)");
+    b = eval_str("(vector 1 2 3)");
+    CHECK(Mequal(a, b),         "hash precondition: vectors are equal");
+    CHECK(Mhash(a) == Mhash(b), "hash: equal vectors hash same");
+
+    /* Nested. */
+    a = eval_str("(list 'a (list 1 2) 'b)");
+    b = eval_str("(list 'a (list 1 2) 'b)");
+    CHECK(Mhash(a) == Mhash(b), "hash: equal nested lists");
+
+    /* Flonum: +0.0 and -0.0 are Mequal — Mhash must agree. */
+    a = Mflonum(0.0);
+    b = Mflonum(-0.0);
+    CHECK(Mequal(a, b),         "hash precondition: +0.0 ≡ -0.0");
+    CHECK(Mhash(a) == Mhash(b), "hash: +0.0 and -0.0 hash same");
+
+    /* Flonum: same numeric value, distinct heap objects. */
+    a = Mflonum(1.5);
+    b = Mflonum(1.5);
+    CHECK(Mhash(a) == Mhash(b), "hash: equal flonums hash same");
+
+    /* --- distinguishability: differing shapes should hash differently
+     * in practice. These are probabilistic checks but the mixer makes
+     * collisions astronomically unlikely. --- */
+
+    a = eval_str("'(1 2 3)");
+    b = eval_str("'(1 2 4)");
+    CHECK(Mhash(a) != Mhash(b), "hash: differing leaf");
+
+    a = eval_str("'(1 2)");
+    b = eval_str("'(1 . 2)");
+    CHECK(Mhash(a) != Mhash(b), "hash: proper vs improper");
+
+    a = eval_str("'(1 2)");
+    b = eval_str("#(1 2)");
+    CHECK(Mhash(a) != Mhash(b), "hash: list vs vector with same elements");
+
+    /* Empty vector should not collide with '() (a known shape-vs-leaf
+     * concern; per-type seeds protect this). */
+    a = eval_str("'()");
+    b = eval_str("#()");
+    CHECK(Mhash(a) != Mhash(b), "hash: () vs empty vector");
+
+    /* Different fixnums must hash differently — the mixer is good
+     * enough that adjacent inputs spread out. */
+    CHECK(Mhash(Mfixnum(0)) != Mhash(Mfixnum(1)), "hash: 0 vs 1");
+    CHECK(Mhash(Mfixnum(1)) != Mhash(Mfixnum(2)), "hash: 1 vs 2");
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
+static void test_hash_prim(void) {
+    Minit();
+    /* Scheme-level wrapper returns a fixnum; calling on the same value
+     * twice gives the same fixnum (which is eq? on fixnums). */
+    CHECK(Mfixnump(eval_str("(hash 42)")),
+          "hash prim: returns fixnum");
+    CHECK(eval_str("(eq? (hash 42) (hash 42))") == Mtrue,
+          "hash prim: deterministic");
+    CHECK(eval_str("(eq? (hash 'foo) (hash 'foo))") == Mtrue,
+          "hash prim: symbols");
+    CHECK(eval_str("(eq? (hash '(1 2 3)) (hash (list 1 2 3)))") == Mtrue,
+          "hash prim: equal lists");
+    CHECK(eval_str("(eq? (hash 1) (hash 2))") == Mfalse,
+          "hash prim: distinct fixnums distinguish");
+    Mshutdown();
+}
+
 static void test_prim_arity_error(void) {
     Minit();
     jmp_buf jmp;
@@ -943,6 +1036,8 @@ int main(void) {
     test_list();
     test_vectors();
     test_equality();
+    test_hash();
+    test_hash_prim();
     test_prim_arity_error();
     TEST_REPORT();
     return tests_failed ? 1 : 0;

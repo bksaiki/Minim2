@@ -385,6 +385,21 @@ void Mwrite(mobj v, FILE *out);
 
 bool Mequal(mobj a, mobj b);
 
+/* Returns a 64-bit hash satisfying:
+ *
+ *     Mequal(a, b)  ⇒  Mhash(a) == Mhash(b)
+ *
+ * Recurses into pairs and vectors in lockstep with Mequal; flonums
+ * hash by their numeric bits with `-0.0` canonicalized to `+0.0`
+ * (matching the numeric comparison Mequal does on flonums). All
+ * other types hash by their word.
+ *
+ * Like Mequal, naive: no cycle detection. Same SRFI-38 fix waits
+ * for a caller (hashtable implementation) to need it.
+ *
+ * Does not allocate; arguments need no GC protection. */
+uint64_t Mhash(mobj v);
+
 /* ----------------------------------------------------------------------
  * Interned symbols
  * -------------------------------------------------------------------- */

@@ -176,15 +176,19 @@ type-checking / contract layer belongs above this one.
         the longer accessors `caar`/`cadr`/... can land later.)
       - [x] Vectors: `make-vector`, `vector`, `vector-ref`,
         `vector-set!`, `vector-length`.
-      - [x] Equality: `eq?`, `eqv?`, `equal?`. `equal?` is naive
-        structural recursion (cdr loop, recurse into car / vector
-        slots, flonum compares numerically). Cycle detection is
-        deferred — circular structures will not terminate. The
-        eventual fix is the SRFI-38 sharing pass shared with the
-        writer; lands when one caller wants it badly enough to pay
-        for the heap-pointer hash map. `Mequal` lives in
-        `src/equal.c` so non-prim callers (future `member`/`assoc`,
-        hashtables, tests) can use it directly.
+      - [x] Equality: `eq?`, `eqv?`, `equal?`, plus structural
+        `hash`. `equal?` is naive structural recursion (cdr loop,
+        recurse into car / vector slots, flonum compares numerically).
+        `Mhash` lives next to `Mequal` in `src/equal.c` and obeys
+        `Mequal(a, b) ⇒ Mhash(a) == Mhash(b)`: splitmix-style 64-bit
+        mix, per-type seeds (so empty vector ≠ `()`), `-0.0`
+        canonicalized to `+0.0` to match the numeric flonum compare.
+        Both expose runtime-level C entry points so future
+        `member`/`assoc` and hashtables can use them directly.
+        Cycle detection is deferred for both — circular structures
+        will not terminate. The eventual fix is the SRFI-38 sharing
+        pass shared with the writer; lands when one caller wants it
+        badly enough to pay for the heap-pointer hash map.
       - [ ] Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
         `quotient`, `remainder`, `zero?`, `positive?`, `negative?`,
         `abs`. Mixed fixnum/flonum follows R7RS contagion (any
