@@ -12,8 +12,11 @@
 mobj begin_sym;
 mobj define_sym;
 mobj if_sym;
+mobj import_sym;
+mobj kernel_module_sym;
 mobj lambda_sym;
 mobj let_sym;
+mobj prefix_kw_sym;
 mobj quote_sym;
 mobj set_sym;
 
@@ -57,8 +60,11 @@ void symbol_init(void) {
     INTERN_AND_PROTECT(begin_sym, "begin");
     INTERN_AND_PROTECT(define_sym, "define");
     INTERN_AND_PROTECT(if_sym, "if");
+    INTERN_AND_PROTECT(import_sym, "import");
+    INTERN_AND_PROTECT(kernel_module_sym, "#%kernel");
     INTERN_AND_PROTECT(lambda_sym, "lambda");
     INTERN_AND_PROTECT(let_sym, "let");
+    INTERN_AND_PROTECT(prefix_kw_sym, "prefix");
     INTERN_AND_PROTECT(quote_sym, "quote");
     INTERN_AND_PROTECT(set_sym, "set!");
 }
@@ -125,8 +131,11 @@ void symbol_shutdown(void) {
     begin_sym = 0;
     define_sym = 0;
     if_sym = 0;
+    import_sym = 0;
+    kernel_module_sym = 0;
     lambda_sym = 0;
     let_sym = 0;
+    prefix_kw_sym = 0;
     quote_sym = 0;
     set_sym = 0;
 }

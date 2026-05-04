@@ -54,8 +54,9 @@ plus the new accessors.
 
 - **Compat:** core.scm re-exports every kernel primitive under its
   canonical name. Existing tests stay unchanged.
-- **Variants:** just `prefix` for v1. `only`/`except`/`rename` are
-  out of scope.
+- **Variants:** bare `(import M)` and `(prefix M P)` for v1.
+  Multiple specs in a single `import` form are allowed (R7RS).
+  `only`/`except`/`rename` are out of scope.
 - **Embedding:** build-time, embedded as a C string. No runtime
   file loading.
 - **Body imports:** top-level only.
@@ -77,24 +78,35 @@ plus the new accessors.
 - [x] Default + `MINIM_GC_STRESS=ON` configs both pass.
 
 ## Phase 2 — `import` special form
-- [ ] Cache `import_sym` in `src/symbol.c` alongside the other
-      special-form symbols.
-- [ ] Recognize `(import spec)` in `step_eval`. Only
-      `(prefix module-ref prefix-sym)` is accepted; everything
-      else is `Merror`. Body-position imports rejected.
-- [ ] Module resolution: hardcoded — if the module-ref is the
-      system symbol `#%kernel`, return `kernel_env`; otherwise
-      `Merror`.
-- [ ] For each `(name . val)` entry in the resolved env, intern
-      `<prefix><name>` and `top_env_define` it.
-- [ ] New `tests/test_import.c` (registered in
-      `tests/CMakeLists.txt`):
-      - Prefix import: verify `($car '(1 2))`, `($+ 1 2)`, etc.
-        work after `(import (prefix #%kernel $))`.
-      - Body-position import is `Merror`.
-      - Unknown module ref is `Merror`.
-      - Malformed spec is `Merror`.
-- [ ] Default + stress pass.
+- [x] Cache `import_sym`, `prefix_kw_sym`, and `kernel_module_sym`
+      in `src/symbol.c` alongside the other special-form symbols.
+      Identity comparison handles module-ref / spec-keyword
+      matching with no strcmp at runtime.
+- [x] Recognize `(import spec ...)` in `step_eval`. Each spec is
+      either a bare module-ref symbol (`(import M)`) or a prefixed
+      import (`(prefix M P)`); multi-spec is allowed. Everything
+      else is `Merror`. Body-position imports rejected via the
+      same `Menvp(eval_env)` check used for internal `define`.
+- [x] Module resolution: hardcoded identity check against
+      `kernel_module_sym`; everything else is `Merror`.
+- [x] `do_import(module_ref, prefix_str)` walks the kernel env
+      and installs each binding into `top_level_env`. With
+      `prefix_str == NULL` (bare form) names are kept unchanged;
+      otherwise each name is `Mintern`'d as `<prefix><name>` and
+      installed via `top_env_define`. Symbol-name pointers are
+      stable across GCs (intern table owns the malloc'd storage),
+      so the prefix string can be read once before the loop;
+      `cur`/`val`/`installed_sym` ride the protect stack across
+      the per-iteration allocations.
+- [x] New `tests/test_import.c` covering: basic prefix import
+      (`$car`, `$+`, etc.), arbitrary prefix symbols (`k:`, `_`),
+      idempotent re-import, body-position rejection, bare import
+      (`(import #%kernel)`), multi-spec (`(import M (prefix M P))`),
+      unknown module rejection in both forms, and a battery of
+      malformed-spec cases (zero specs, non-symbol-non-pair spec,
+      non-prefix keyword, wrong-length prefix spec, non-symbol
+      module-ref, non-symbol prefix).
+- [x] Default + stress pass.
 
 ## Phase 3 — core library
 - [ ] `lib/core.scm`:

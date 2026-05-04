@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* ======================================================================
  * Primitive function table
@@ -236,6 +237,67 @@ void prim_register(const char *name, Mprim_fn fn,
     MINIM_GC_FRAME_END;
 }
 
+/* import implementation. Walks the resolved module env and
+ * installs each binding into the top-level env. With `prefix_str
+ * == NULL` (bare `(import M)`), names are installed unchanged;
+ * with a prefix, each name is `<prefix><name>` interned fresh.
+ *
+ * GC discipline: each iteration calls `top_env_define` (always
+ * potentially allocating) and possibly `Mintern` (also). The walk
+ * pointer (`cur`), the value to install, and the symbol we'll bind
+ * under all ride the protect stack. The prefix string is read once
+ * before the loop — symbol-name pointers are stable across GCs
+ * (the intern table owns the malloc'd backing memory). */
+static void do_import(mobj module_ref, const char *prefix_str) {
+    if (module_ref != kernel_module_sym) {
+        Merror("import: unknown module: %s", Msymbol_name(module_ref));
+    }
+
+    size_t prefix_len = prefix_str ? strlen(prefix_str) : 0;
+
+    MINIM_GC_FRAME_BEGIN;
+    mobj cur = kernel_env;
+    mobj val = Mfalse;
+    mobj installed_sym = Mfalse;
+    MINIM_GC_PROTECT(cur);
+    MINIM_GC_PROTECT(val);
+    MINIM_GC_PROTECT(installed_sym);
+
+    char buf[256];
+
+    while (Mpairp(cur)) {
+        /* `entry` and `name` are bare locals — read once and
+         * consumed before the next allocation. `val` lives on the
+         * protect stack so it survives the operations below. */
+        mobj entry = Mcar(cur);
+        mobj name = Mcar(entry);
+        val = Mcdr(entry);
+
+        if (prefix_str == NULL) {
+            /* Bare import: install under the original name. `name`
+             * is read before any allocation; stash into the
+             * protected slot before top_env_define. */
+            installed_sym = name;
+        } else {
+            const char *name_str = Msymbol_name(name);
+            size_t name_len = strlen(name_str);
+            if (prefix_len + name_len + 1 > sizeof(buf)) {
+                Merror("import: prefixed name too long");
+            }
+            memcpy(buf, prefix_str, prefix_len);
+            memcpy(buf + prefix_len, name_str, name_len);
+            buf[prefix_len + name_len] = '\0';
+            installed_sym = Mintern(buf);
+        }
+
+        top_env_define(installed_sym, val);
+
+        cur = Mcdr(cur);
+    }
+
+    MINIM_GC_FRAME_END;
+}
+
 /* Walk the lexical-env chain looking for `sym` in each rib. Each rib
  * is a vector laid out as [name0 val0 name1 val1 ...]; we scan
  * linearly. Top-level fallthrough handles globals defined via
@@ -406,6 +468,54 @@ static void step_eval(void) {
             if (!Msymbolp(name)) Merror("define: name must be a symbol");
             eval_expr = Mcar(Mcdr(rest));
             eval_kont = Mkont_define(eval_kont, eval_env, name);
+            return;
+        }
+
+        if (head == import_sym) {
+            /* (import spec ...). Top-level only for v1. Each spec
+             * is either a bare module-ref symbol or a prefixed
+             * import `(prefix module-ref prefix-sym)`. R7RS sugar
+             * (only/except/rename) and library names that aren't
+             * single symbols are out of scope for v1.
+             *
+             * Module resolution is hardcoded inside `do_import` —
+             * `#%kernel` is the only known module today. Result
+             * is `#<void>`. */
+            if (Menvp(eval_env)) {
+                Merror("import: only allowed at top level");
+            }
+            if (Mnullp(rest)) {
+                Merror("import: expected at least one spec");
+            }
+            for (mobj p = rest; Mpairp(p); p = Mcdr(p)) {
+                mobj spec = Mcar(p);
+                if (Msymbolp(spec)) {
+                    /* (import M) — bare. */
+                    do_import(spec, NULL);
+                } else if (Mpairp(spec) && Mcar(spec) == prefix_kw_sym) {
+                    /* (import (prefix M P)). list_length validates
+                     * properness too; an improper list would have
+                     * errored on its own. */
+                    if (list_length(spec) != 3) {
+                        Merror("import: malformed prefix spec "
+                               "(want (prefix M P))");
+                    }
+                    mobj module_ref = Mcar(Mcdr(spec));
+                    mobj prefix = Mcar(Mcdr(Mcdr(spec)));
+                    if (!Msymbolp(module_ref)) {
+                        Merror("import: module ref must be a symbol");
+                    }
+                    if (!Msymbolp(prefix)) {
+                        Merror("import: prefix must be a symbol");
+                    }
+                    do_import(module_ref, Msymbol_name(prefix));
+                } else {
+                    Merror("import: malformed spec "
+                           "(want module-ref or (prefix M P))");
+                }
+            }
+            eval_expr = Mvoid;
+            eval_mode = APPLY_MODE;
             return;
         }
 

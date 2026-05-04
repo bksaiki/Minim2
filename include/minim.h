@@ -413,8 +413,11 @@ uint64_t Mhash(mobj v);
 extern mobj begin_sym;
 extern mobj define_sym;
 extern mobj if_sym;
+extern mobj import_sym;
+extern mobj kernel_module_sym;
 extern mobj lambda_sym;
 extern mobj let_sym;
+extern mobj prefix_kw_sym;
 extern mobj quote_sym;
 extern mobj set_sym;
 
