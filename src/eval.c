@@ -26,7 +26,7 @@ size_t prim_fn_register(Mprim_fn fn) {
         size_t nc = prim_fn_cap == 0 ? 32 : prim_fn_cap * 2;
         Mprim_fn *nt = realloc(prim_fn_table, nc * sizeof(Mprim_fn));
         if (!nt) {
-            fprintf(stderr, "minim: prim_fn_register: OOM\n");
+            fprintf(stderr, "error: prim_fn_register: OOM\n");
             abort();
         }
         prim_fn_table = nt;
@@ -48,14 +48,7 @@ Mprim_fn Mprim_fn_of(mobj v) {
 jmp_buf *minim_error_jmp = NULL;
 size_t   minim_error_jmp_ssp = 0;
 
-void Merror(const char *fmt, ...) {
-    va_list ap;
-    fputs("minim: ", stderr);
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    fputc('\n', stderr);
-
+void Mraise(void) {
     if (minim_error_jmp != NULL) {
         /* Unwind any partial MINIM_GC_PROTECT frames left behind by
          * the longjmped-over code so the next operation sees a clean
@@ -64,6 +57,16 @@ void Merror(const char *fmt, ...) {
         longjmp(*minim_error_jmp, 1);
     }
     abort();
+}
+
+void Merror(const char *fmt, ...) {
+    va_list ap;
+    fputs("error: ", stderr);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fputc('\n', stderr);
+    Mraise();
 }
 
 /* ======================================================================
@@ -106,6 +109,7 @@ void eval_init(void) {
     minim_protect(&eval_env);
     minim_protect(&eval_kont);
     minim_protect(&top_level_env);
+    prims_register_all();
 }
 
 void eval_shutdown(void) {
@@ -167,6 +171,17 @@ static void top_env_define(mobj sym, mobj val) {
     mobj entry = Mcons(sym, val);
     MINIM_GC_PROTECT(entry);
     top_level_env = Mcons(entry, top_level_env);
+    MINIM_GC_FRAME_END;
+}
+
+/* Bind `name` to a freshly-allocated primitive procedure in the
+ * top-level env. Used by prims_register_all during eval_init. */
+void prim_register(const char *name, Mprim_fn fn,
+                   intptr_t arity_min, intptr_t arity_max) {
+    MINIM_GC_FRAME_BEGIN;
+    mobj p = Mprim(name, fn, arity_min, arity_max);
+    MINIM_GC_PROTECT(p);
+    top_env_define(Mprim_name(p), p);
     MINIM_GC_FRAME_END;
 }
 
@@ -585,11 +600,38 @@ static void step_apply(void) {
             return;
         }
 
-        if (Mprimp(op) || Mkontp(op)) {
-            Merror("procedure kind not yet supported (Phase 4 closures only)");
-        } else {
-            Merror("attempt to apply a non-procedure value");
+        if (Mprimp(op)) {
+            /* Arity check using the prim's stored min/max, then call
+             * the C function with the already-evaluated args list.
+             * `args` is on the protect stack from earlier in this
+             * branch, so the prim is free to allocate. The result is
+             * a bare local but we use it immediately to write a
+             * registered global. */
+            intptr_t arity_min = Mfixnum_val(Mprim_arity_min(op));
+            intptr_t arity_max = Mfixnum_val(Mprim_arity_max(op));
+            size_t n_args = list_length(args);
+            if (n_args < (size_t)arity_min) {
+                Merror("arity mismatch: %s expected at least %ld arg%s, got %zu",
+                       Msymbol_name(Mprim_name(op)), (long)arity_min,
+                       arity_min == 1 ? "" : "s", n_args);
+            }
+            if (arity_max >= 0 && n_args > (size_t)arity_max) {
+                Merror("arity mismatch: %s expected at most %ld arg%s, got %zu",
+                       Msymbol_name(Mprim_name(op)), (long)arity_max,
+                       arity_max == 1 ? "" : "s", n_args);
+            }
+            Mprim_fn fn = Mprim_fn_of(op);
+            eval_expr = fn(args);
+            MINIM_GC_FRAME_END;
+            eval_mode = APPLY_MODE;
+            return;
         }
+
+        if (Mkontp(op)) {
+            Merror("continuation invocation not yet supported (Phase 8)");
+        }
+
+        Merror("attempt to apply a non-procedure value");
         /* Merror longjmps; not reached. */
         MINIM_GC_FRAME_END;
         return;

@@ -329,6 +329,12 @@ extern size_t   minim_error_jmp_ssp;
 
 void Merror(const char *fmt, ...);
 
+/* Trigger the error-handling unwind without writing to stderr.
+ * Used by callers that have already formatted their own message
+ * (e.g. the `error` primitive, which renders arbitrary values via
+ * Mwrite). Dispatches to the same longjmp-or-abort path as Merror. */
+void Mraise(void);
+
 /* ----------------------------------------------------------------------
  * Reader / writer
  *
@@ -364,6 +370,41 @@ void mreader_init_file(mreader *r, FILE *fp);
 
 mobj Mread(mreader *r);
 void Mwrite(mobj v, FILE *out);
+
+/* ----------------------------------------------------------------------
+ * Structural equality
+ *
+ * Recurses into pair car/cdr and vector slots; compares flonums
+ * numerically; falls back to word-equality for everything else
+ * (fixnums, symbols-by-interning, immediates, characters, closures,
+ * primitives, continuations, environments).
+ *
+ * Naive — does not detect cycles. Circular structures will not
+ * terminate. The intended fix is the SRFI-38 sharing-detection pass,
+ * which is also what the writer wants for cycle-aware printing; the
+ * shared infrastructure lands when one of the two callers needs it
+ * badly enough to justify the heap-pointer hash map.
+ *
+ * Mequal does not allocate, so callers do not need to protect either
+ * argument across the call.
+ * -------------------------------------------------------------------- */
+
+bool Mequal(mobj a, mobj b);
+
+/* Returns a 64-bit hash satisfying:
+ *
+ *     Mequal(a, b)  ⇒  Mhash(a) == Mhash(b)
+ *
+ * Recurses into pairs and vectors in lockstep with Mequal; flonums
+ * hash by their numeric bits with `-0.0` canonicalized to `+0.0`
+ * (matching the numeric comparison Mequal does on flonums). All
+ * other types hash by their word.
+ *
+ * Like Mequal, naive: no cycle detection. Same SRFI-38 fix waits
+ * for a caller (hashtable implementation) to need it.
+ *
+ * Does not allocate; arguments need no GC protection. */
+uint64_t Mhash(mobj v);
 
 /* ----------------------------------------------------------------------
  * Interned symbols

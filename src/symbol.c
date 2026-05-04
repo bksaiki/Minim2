@@ -52,7 +52,7 @@ static unsigned long hash_name(const char *s, size_t len) {
 void symbol_init(void) {
     intern_table_sz = INTERN_TABLE_INIT_SIZE;
     intern_table = calloc(intern_table_sz, sizeof(intern_bucket *));
-    if (!intern_table) { fprintf(stderr, "minim: intern table OOM\n"); abort(); }
+    if (!intern_table) { fprintf(stderr, "error: intern table OOM\n"); abort(); }
 
     INTERN_AND_PROTECT(begin_sym, "begin");
     INTERN_AND_PROTECT(define_sym, "define");
@@ -82,7 +82,7 @@ mobj Mintern(const char *name) {
     ((mobj *)p)[0] = MTAG_SYMBOL;
     /* name pointer */
     char *name_copy = malloc(len + 1);
-    if (!name_copy) { fprintf(stderr, "minim: symbol name OOM\n"); abort(); }
+    if (!name_copy) { fprintf(stderr, "error: symbol name OOM\n"); abort(); }
     memcpy(name_copy, name, len + 1);
     *(char **)(p + 8) = name_copy;
 
@@ -90,7 +90,7 @@ mobj Mintern(const char *name) {
 
     /* Insert into bucket */
     intern_bucket *b = malloc(sizeof(intern_bucket));
-    if (!b) { fprintf(stderr, "minim: intern bucket OOM\n"); abort(); }
+    if (!b) { fprintf(stderr, "error: intern bucket OOM\n"); abort(); }
     b->symbol = sym;
     b->next = intern_table[idx];
     intern_table[idx] = b;

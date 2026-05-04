@@ -24,4 +24,14 @@ void eval_init(void);
  * buffer is reused across cycles. */
 void eval_shutdown(void);
 
+/* Defined in eval.c. Interns `name`, allocates an MSEC_PRIM object,
+ * and binds it into the top-level env. Called from prims_register_all
+ * during eval_init, after the env globals are seeded. */
+void prim_register(const char *name, Mprim_fn fn,
+                   intptr_t arity_min, intptr_t arity_max);
+
+/* Defined in prims.c. Registers every built-in procedure into the
+ * top-level env. */
+void prims_register_all(void);
+
 #endif /* MINIM_INTERNAL_H_ */

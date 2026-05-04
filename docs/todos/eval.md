@@ -157,28 +157,62 @@ across each allocation.
       and `MINIM_GC_STRESS=ON` configs both pass.
 
 ## Phase 6 — primitives
-- [ ] `MSEC_PRIM` constructor + `prim_register(name, fn, min, max)`
-      helper that interns the name, allocates the prim, and installs
-      it into the top-level env.
-- [ ] APPLY dispatches on closure-vs-primitive-vs-cont; primitive
-      path calls the C function with the `evald` arg list.
-- [ ] Implement (split into groups; one PR per group is fine):
-      - Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
+
+Primitives are deliberately minimal: arity is checked at the call
+site (using the prim's stored min/max), but argument types are not.
+Passing the wrong type is undefined behavior at this layer; a
+type-checking / contract layer belongs above this one.
+
+- [x] `MSEC_PRIM` constructor (Phase 1) + `prim_register(name, fn,
+      min, max)` helper in `src/eval.c` that interns the name, allocates
+      the prim, and installs it into the top-level env.
+- [x] APPLY dispatches on closure-vs-primitive-vs-cont; primitive
+      path arity-checks then calls the C function with the `evald`
+      arg list. Continuation invocation is still stubbed (Phase 8).
+- Implement (split into groups; one PR per group is fine):
+      - [x] Type predicates: `pair?`, `null?`, `symbol?`, `boolean?`,
+        `number?`, `procedure?`, `vector?`, `char?`, `eof-object?`.
+      - [x] Pair / list: `cons`, `car`, `cdr`, `list`. (`list?` and
+        the longer accessors `caar`/`cadr`/... can land later.)
+      - [x] Vectors: `make-vector`, `vector`, `vector-ref`,
+        `vector-set!`, `vector-length`.
+      - [x] Equality: `eq?`, `eqv?`, `equal?`, plus structural
+        `hash`. `equal?` is naive structural recursion (cdr loop,
+        recurse into car / vector slots, flonum compares numerically).
+        `Mhash` lives next to `Mequal` in `src/equal.c` and obeys
+        `Mequal(a, b) ⇒ Mhash(a) == Mhash(b)`: splitmix-style 64-bit
+        mix, per-type seeds (so empty vector ≠ `()`), `-0.0`
+        canonicalized to `+0.0` to match the numeric flonum compare.
+        Both expose runtime-level C entry points so future
+        `member`/`assoc` and hashtables can use them directly.
+        Cycle detection is deferred for both — circular structures
+        will not terminate. The eventual fix is the SRFI-38 sharing
+        pass shared with the writer; lands when one caller wants it
+        badly enough to pay for the heap-pointer hash map.
+      - [x] Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
         `quotient`, `remainder`, `zero?`, `positive?`, `negative?`,
-        `abs`. Mixed fixnum/flonum follows R7RS contagion (any
-        flonum arg ⇒ flonum result).
-      - Pair / list: `cons`, `car`, `cdr`, `pair?`, `null?`, `list`,
-        `list?`.
-      - Equality: `eq?`, `eqv?`. `equal?` deferred until we have
-        cycle-aware structural equality.
-      - I/O: `display`, `write`, `newline`, `read`. `display` only
+        `abs`, `exact->inexact`. Mixed fixnum/flonum follows R7RS
+        contagion: any flonum arg switches to a double computation
+        and returns a flonum; pure fixnum stays fixnum. Overflow
+        wraps; division-by-zero is undefined at this layer.
+        `exact->inexact` is the only Scheme-level path to a flonum
+        until the parser learns flonum literals (parser Phase 3) —
+        the test suite uses it to exercise contagion. `quotient`/
+        `remainder` are integer-only; C99 truncated-toward-zero
+        division matches R7RS.
+      - [ ] I/O: `display`, `write`, `newline`, `read`. `display` only
         diverges from `write` once strings exist (chars are already
         readable both ways).
-      - Type predicates: `symbol?`, `number?`, `boolean?`,
-        `procedure?`, `vector?`, `char?`, `eof-object?`.
-      - Vectors: `make-vector`, `vector-ref`, `vector-set!`,
-        `vector-length`, `vector?`, `vector`.
-- [ ] Tests per group.
+      - [x] Errors: `error`. Kernel form — first arg is the message,
+        any number of irritants follow; everything is rendered with
+        `Mwrite` to stderr and the runtime unwinds via `Mraise` (the
+        public no-format counterpart of `Merror`). Until strings
+        exist there's no message/irritant distinction at the value
+        layer, so `(error 'foo 1 'bar)` is fine.
+- [x] Tests per group landed (`test_type_predicates`, `test_pairs`,
+      `test_list`, `test_vectors`, `test_equality`,
+      `test_prim_arity_error`). Default and `MINIM_GC_STRESS=ON`
+      configs both pass.
 
 ## Phase 7 — tail-call optimization
 - [ ] By construction: `KONT_APP` pops *before* invoking the closure

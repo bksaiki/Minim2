@@ -18,7 +18,7 @@ void minim_shadow_stack_grow(void) {
         ? SHADOW_STACK_INIT_CAP
         : minim_ssp_capacity * 2;
     mobj **ns = realloc(minim_shadow_stack, new_cap * sizeof(mobj *));
-    if (!ns) { fprintf(stderr, "minim: shadow stack OOM\n"); abort(); }
+    if (!ns) { fprintf(stderr, "error: shadow stack OOM\n"); abort(); }
     minim_shadow_stack = ns;
     minim_ssp_capacity = new_cap;
 }
@@ -32,7 +32,7 @@ void minim_protect(mobj *slot) {
     if (global_roots_n == global_roots_cap) {
         size_t nc = global_roots_cap == 0 ? 16 : global_roots_cap * 2;
         mobj **ng = realloc(global_roots, nc * sizeof(mobj *));
-        if (!ng) { fprintf(stderr, "minim: global roots OOM\n"); abort(); }
+        if (!ng) { fprintf(stderr, "error: global roots OOM\n"); abort(); }
         global_roots = ng;
         global_roots_cap = nc;
     }
@@ -51,7 +51,7 @@ static struct minim_heap {
 static char *heap_mmap(size_t n) {
     void *p = mmap(NULL, n, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) { fprintf(stderr, "minim: mmap failed\n"); abort(); }
+    if (p == MAP_FAILED) { fprintf(stderr, "error: mmap failed\n"); abort(); }
     return (char *)p;
 }
 
@@ -110,7 +110,7 @@ static size_t object_size(mobj v) {
         return minim_vector_size(slots);
     }
     default:
-        fprintf(stderr, "minim: gc: object_size on non-heap tag %lx\n",
+        fprintf(stderr, "error: gc: object_size on non-heap tag %lx\n",
                 (unsigned long)tag);
         abort();
     }
@@ -168,7 +168,7 @@ static void scan_fields(char *base, mobj tag, char *to_base) {
         break;
     }
     default:
-        fprintf(stderr, "minim: scan_fields: unknown tag %lx\n",
+        fprintf(stderr, "error: scan_fields: unknown tag %lx\n",
                 (unsigned long)tag);
         abort();
     }
@@ -183,7 +183,7 @@ static void scan_tags_ensure(size_t space_bytes) {
     if (slots > scan_tags_cap) {
         free(scan_tags);
         scan_tags = malloc(slots * sizeof(mobj));
-        if (!scan_tags) { fprintf(stderr, "minim: scan tags OOM\n"); abort(); }
+        if (!scan_tags) { fprintf(stderr, "error: scan tags OOM\n"); abort(); }
         scan_tags_cap = slots;
     }
 }
@@ -272,7 +272,7 @@ static void do_collect(void) {
             break;
         }
         default:
-            fprintf(stderr, "minim: gc scan: bad tag %lx\n", (unsigned long)tag);
+            fprintf(stderr, "error: gc scan: bad tag %lx\n", (unsigned long)tag);
             abort();
         }
         scan_fields(heap.scan, tag, heap.from_base);
@@ -321,7 +321,7 @@ char *gc_alloc(size_t n) {
     if (heap.ap + n > heap.from_end)
         gc_collect(n);
     if (heap.ap + n > heap.from_end) {
-        fprintf(stderr, "minim: gc_alloc: out of memory after GC\n");
+        fprintf(stderr, "error: gc_alloc: out of memory after GC\n");
         abort();
     }
     char *p = heap.ap;
