@@ -189,10 +189,17 @@ type-checking / contract layer belongs above this one.
         will not terminate. The eventual fix is the SRFI-38 sharing
         pass shared with the writer; lands when one caller wants it
         badly enough to pay for the heap-pointer hash map.
-      - [ ] Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
+      - [x] Arithmetic: `+`, `-`, `*`, `=`, `<`, `>`, `<=`, `>=`,
         `quotient`, `remainder`, `zero?`, `positive?`, `negative?`,
-        `abs`. Mixed fixnum/flonum follows R7RS contagion (any
-        flonum arg ⇒ flonum result).
+        `abs`, `exact->inexact`. Mixed fixnum/flonum follows R7RS
+        contagion: any flonum arg switches to a double computation
+        and returns a flonum; pure fixnum stays fixnum. Overflow
+        wraps; division-by-zero is undefined at this layer.
+        `exact->inexact` is the only Scheme-level path to a flonum
+        until the parser learns flonum literals (parser Phase 3) —
+        the test suite uses it to exercise contagion. `quotient`/
+        `remainder` are integer-only; C99 truncated-toward-zero
+        division matches R7RS.
       - [ ] I/O: `display`, `write`, `newline`, `read`. `display` only
         diverges from `write` once strings exist (chars are already
         readable both ways).

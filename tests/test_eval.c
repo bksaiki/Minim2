@@ -888,6 +888,118 @@ static void test_equality(void) {
     Mshutdown();
 }
 
+static void test_arith_fixnum(void) {
+    Minit();
+    /* +, *, -: identities and basic algebra. */
+    CHECK(Mfixnum_val(eval_str("(+)")) == 0,             "+: identity 0");
+    CHECK(Mfixnum_val(eval_str("(+ 7)")) == 7,           "+: unary");
+    CHECK(Mfixnum_val(eval_str("(+ 1 2 3 4)")) == 10,    "+: 1+2+3+4");
+    CHECK(Mfixnum_val(eval_str("(*)")) == 1,             "*: identity 1");
+    CHECK(Mfixnum_val(eval_str("(* 6)")) == 6,           "*: unary");
+    CHECK(Mfixnum_val(eval_str("(* 2 3 4)")) == 24,      "*: 2*3*4");
+    CHECK(Mfixnum_val(eval_str("(- 5)")) == -5,          "-: unary negate");
+    CHECK(Mfixnum_val(eval_str("(- -5)")) == 5,          "-: negate negative");
+    CHECK(Mfixnum_val(eval_str("(- 10 1 2 3)")) == 4,    "-: left-fold");
+
+    /* quotient/remainder: truncated toward zero. */
+    CHECK(Mfixnum_val(eval_str("(quotient 17 5)")) == 3,    "quotient: 17/5");
+    CHECK(Mfixnum_val(eval_str("(quotient -17 5)")) == -3,  "quotient: -17/5 truncates to 0");
+    CHECK(Mfixnum_val(eval_str("(quotient 17 -5)")) == -3,  "quotient: 17/-5");
+    CHECK(Mfixnum_val(eval_str("(remainder 17 5)")) == 2,   "remainder: 17%5");
+    CHECK(Mfixnum_val(eval_str("(remainder -17 5)")) == -2, "remainder: -17%5 sign of dividend");
+    CHECK(Mfixnum_val(eval_str("(remainder 17 -5)")) == 2,  "remainder: 17%-5");
+
+    /* abs and sign predicates. */
+    CHECK(Mfixnum_val(eval_str("(abs 7)")) == 7,    "abs: positive");
+    CHECK(Mfixnum_val(eval_str("(abs -7)")) == 7,   "abs: negative");
+    CHECK(Mfixnum_val(eval_str("(abs 0)")) == 0,    "abs: zero");
+    CHECK(Mtruep(eval_str("(zero? 0)")),            "zero?: 0");
+    CHECK(Mfalsep(eval_str("(zero? 1)")),           "zero?: 1");
+    CHECK(Mtruep(eval_str("(positive? 5)")),        "positive?: 5");
+    CHECK(Mfalsep(eval_str("(positive? 0)")),       "positive?: 0");
+    CHECK(Mfalsep(eval_str("(positive? -3)")),      "positive?: -3");
+    CHECK(Mtruep(eval_str("(negative? -3)")),       "negative?: -3");
+    CHECK(Mfalsep(eval_str("(negative? 0)")),       "negative?: 0");
+    Mshutdown();
+}
+
+static void test_arith_compare(void) {
+    Minit();
+    /* = */
+    CHECK(Mtruep(eval_str("(= 1 1)")),              "=: 1 1");
+    CHECK(Mtruep(eval_str("(= 1 1 1)")),            "=: 1 1 1");
+    CHECK(Mfalsep(eval_str("(= 1 2)")),             "=: 1 2");
+    CHECK(Mfalsep(eval_str("(= 1 1 2)")),           "=: 1 1 2 short-circuits");
+
+    /* <, >, <=, >= */
+    CHECK(Mtruep(eval_str("(< 1 2 3)")),            "<: increasing");
+    CHECK(Mfalsep(eval_str("(< 1 3 2)")),           "<: not strictly increasing");
+    CHECK(Mfalsep(eval_str("(< 1 1)")),             "<: equal not strictly less");
+    CHECK(Mtruep(eval_str("(<= 1 1 2)")),           "<=: allows equality");
+    CHECK(Mfalsep(eval_str("(<= 1 2 1)")),          "<=: 1 2 1");
+    CHECK(Mtruep(eval_str("(> 3 2 1)")),            ">: decreasing");
+    CHECK(Mfalsep(eval_str("(> 3 1 2)")),           ">: not strictly decreasing");
+    CHECK(Mtruep(eval_str("(>= 3 3 1)")),           ">=: allows equality");
+    Mshutdown();
+}
+
+static void test_arith_flonum(void) {
+    Minit();
+    /* `exact->inexact` is the only fixnum→flonum bridge until the
+     * reader gets flonum literals. Use it for every flonum input. */
+    mobj v;
+
+    v = eval_str("(exact->inexact 3)");
+    CHECK(Mflonump(v) && Mflonum_val(v) == 3.0,
+                                                    "exact->inexact: fixnum → flonum");
+    v = eval_str("(exact->inexact (exact->inexact 3))");
+    CHECK(Mflonump(v) && Mflonum_val(v) == 3.0,
+                                                    "exact->inexact: flonum identity");
+
+    /* Contagion: any flonum arg ⇒ flonum result. */
+    v = eval_str("(+ (exact->inexact 1) 2)");
+    CHECK(Mflonump(v) && Mflonum_val(v) == 3.0,    "+: contagion → flonum");
+    v = eval_str("(* 2 (exact->inexact 3))");
+    CHECK(Mflonump(v) && Mflonum_val(v) == 6.0,    "*: contagion → flonum");
+    v = eval_str("(- (exact->inexact 5) 2)");
+    CHECK(Mflonump(v) && Mflonum_val(v) == 3.0,    "-: contagion → flonum");
+
+    /* Pure-fixnum stays fixnum. */
+    v = eval_str("(+ 1 2)");
+    CHECK(Mfixnump(v),                              "+: pure fixnum stays fixnum");
+
+    /* Numeric `=` ignores exactness. */
+    CHECK(Mtruep(eval_str("(= 1 (exact->inexact 1))")), "=: 1 ≡ 1.0");
+    CHECK(Mtruep(eval_str("(< 1 (exact->inexact 2))")), "<: 1 < 2.0");
+
+    /* abs / zero? / positive? / negative? on flonums. */
+    v = eval_str("(abs (- (exact->inexact 7)))");
+    CHECK(Mflonump(v) && Mflonum_val(v) == 7.0,    "abs: flonum");
+    CHECK(Mtruep(eval_str("(zero? (exact->inexact 0))")),
+                                                    "zero?: 0.0");
+    CHECK(Mtruep(eval_str("(positive? (exact->inexact 1))")),
+                                                    "positive?: 1.0");
+    CHECK(Mtruep(eval_str("(negative? (- (exact->inexact 1)))")),
+                                                    "negative?: -1.0");
+    Mshutdown();
+}
+
+static void test_arith_factorial(void) {
+    Minit();
+    /* End-to-end integration with eval: recursive factorial. Exercises
+     * `if`, `=`, `*`, `-`, lambda, and define together. Tail-recursive
+     * variant lands with the TCO test in Phase 7. */
+    eval_seq(
+        "(define f"
+        "  (lambda (n)"
+        "    (if (= n 0) 1 (* n (f (- n 1))))))");
+    CHECK(Mfixnum_val(eval_str("(f 0)")) == 1,           "fact: 0! = 1");
+    CHECK(Mfixnum_val(eval_str("(f 1)")) == 1,           "fact: 1! = 1");
+    CHECK(Mfixnum_val(eval_str("(f 5)")) == 120,         "fact: 5! = 120");
+    CHECK(Mfixnum_val(eval_str("(f 10)")) == 3628800,    "fact: 10!");
+    Mshutdown();
+}
+
 static void test_hash(void) {
     Minit();
 
@@ -1036,6 +1148,10 @@ int main(void) {
     test_list();
     test_vectors();
     test_equality();
+    test_arith_fixnum();
+    test_arith_compare();
+    test_arith_flonum();
+    test_arith_factorial();
     test_hash();
     test_hash_prim();
     test_prim_arity_error();
