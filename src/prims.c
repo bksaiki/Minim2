@@ -1,6 +1,8 @@
 #include "minim.h"
 #include "internal.h"
 
+#include <math.h>
+
 /* ======================================================================
  * Built-in primitive procedures.
  *
@@ -238,8 +240,12 @@ static mobj prim_negative_p(mobj args) {
 static mobj prim_abs(mobj args) {
     mobj v = Mcar(args);
     if (Mflonump(v)) {
+        /* signbit, not `d < 0.0`: the latter would leave -0.0 alone
+         * (since -0.0 == 0.0 numerically), but R7RS abs should give
+         * +0.0. signbit also handles negative NaN bit patterns
+         * consistently. */
         double d = Mflonum_val(v);
-        return d < 0.0 ? Mflonum(-d) : v;
+        return signbit(d) ? Mflonum(-d) : v;
     }
     intptr_t n = Mfixnum_val(v);
     return n < 0 ? Mfixnum(-n) : v;

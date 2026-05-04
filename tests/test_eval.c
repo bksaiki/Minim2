@@ -1,6 +1,7 @@
 #include "minim.h"
 #include "harness.h"
 
+#include <math.h>
 #include <setjmp.h>
 #include <string.h>
 
@@ -975,6 +976,12 @@ static void test_arith_flonum(void) {
     /* abs / zero? / positive? / negative? on flonums. */
     v = eval_str("(abs (- (exact->inexact 7)))");
     CHECK(Mflonump(v) && Mflonum_val(v) == 7.0,    "abs: flonum");
+
+    /* abs(-0.0) must give +0.0 — `d < 0.0` would miss this since
+     * -0.0 == 0.0 numerically. signbit catches the sign. */
+    v = eval_str("(abs (- (exact->inexact 0)))");
+    CHECK(Mflonump(v) && Mflonum_val(v) == 0.0 && !signbit(Mflonum_val(v)),
+                                                    "abs: -0.0 → +0.0");
     CHECK(Mtruep(eval_str("(zero? (exact->inexact 0))")),
                                                     "zero?: 0.0");
     CHECK(Mtruep(eval_str("(positive? (exact->inexact 1))")),

@@ -179,11 +179,9 @@ static void top_env_define(mobj sym, mobj val) {
 void prim_register(const char *name, Mprim_fn fn,
                    intptr_t arity_min, intptr_t arity_max) {
     MINIM_GC_FRAME_BEGIN;
-    mobj sym = Mintern(name);
-    MINIM_GC_PROTECT(sym);
     mobj p = Mprim(name, fn, arity_min, arity_max);
     MINIM_GC_PROTECT(p);
-    top_env_define(sym, p);
+    top_env_define(Mprim_name(p), p);
     MINIM_GC_FRAME_END;
 }
 
