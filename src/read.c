@@ -308,6 +308,50 @@ static mobj read_vector(mreader *r) {
 }
 
 /* ----------------------------------------------------------------------
+ * String literal
+ *
+ * `"..."` with the four R7RS escapes the v1 string can hold:
+ *   \\  \"  \n  \t  \r
+ * Anything else after a backslash is a parse error. v1 strings are
+ * ASCII-only, so bytes >= 0x80 in the literal also error out — the
+ * reader is the canonical place to enforce this since `Mstring_from_bytes`
+ * trusts its input.
+ * -------------------------------------------------------------------- */
+
+static mobj read_string(mreader *r) {
+    /* Opening `"` already consumed. */
+    char buf[READ_BUF_MAX];
+    size_t n = 0;
+    for (;;) {
+        int c = reader_get(r);
+        if (c == EOF) parse_error("unterminated string literal");
+        if (c == '"') break;
+        if (c == '\\') {
+            int e = reader_get(r);
+            switch (e) {
+            case '\\': c = '\\'; break;
+            case '"':  c = '"';  break;
+            case 'n':  c = '\n'; break;
+            case 't':  c = '\t'; break;
+            case 'r':  c = '\r'; break;
+            case EOF:
+                parse_error("unterminated escape in string literal");
+                break;
+            default:
+                parse_error_c("unknown escape in string literal", e);
+            }
+        }
+        if (c >= 0x80) {
+            parse_error_c("non-ASCII byte in string literal "
+                          "(strings are ASCII-only in v1)", c);
+        }
+        if (n + 1 >= sizeof(buf)) parse_error("string literal too long");
+        buf[n++] = (char)c;
+    }
+    return Mstring_from_bytes(buf, n);
+}
+
+/* ----------------------------------------------------------------------
  * #-prefixed syntax
  * -------------------------------------------------------------------- */
 
@@ -456,6 +500,7 @@ static mobj read_datum(mreader *r) {
     if (c == EOF) return Meof;
     if (c == '(' || c == '[' || c == '{') return read_list(r, c);
     if (c == '#') return read_hash(r);
+    if (c == '"') return read_string(r);
 
     if (c == '\'') {
         MINIM_GC_FRAME_BEGIN;

@@ -33,6 +33,26 @@ static char *roundtrip(const char *src) {
     return write_to_str(v);
 }
 
+/* `display` counterpart to `write_to_str`. */
+static char *display_to_str(mobj v) {
+    char *buf = NULL;
+    size_t len = 0;
+    FILE *f = open_memstream(&buf, &len);
+    if (!f) { perror("open_memstream"); abort(); }
+    Mdisplay(v, f);
+    fflush(f);
+    fclose(f);
+    return buf;
+}
+
+#define CHECK_DISPLAY(expr, expected, name) do {         \
+    char *_s = display_to_str(expr);                     \
+    CHECK(strcmp(_s, (expected)) == 0, name);            \
+    if (strcmp(_s, (expected)) != 0)                     \
+        fprintf(stderr, "  got: \"%s\"\n  want: \"%s\"\n", _s, (expected)); \
+    free(_s);                                            \
+} while (0)
+
 #define CHECK_WRITE(expr, expected, name) do {           \
     char *_s = write_to_str(expr);                       \
     CHECK(strcmp(_s, (expected)) == 0, name);            \
@@ -309,6 +329,102 @@ static void test_char_roundtrip(void) {
     Mshutdown();
 }
 
+/* ----------------------------------------------------------------------
+ * Strings
+ * -------------------------------------------------------------------- */
+
+static void test_strings_write(void) {
+    Minit();
+    MINIM_GC_FRAME_BEGIN;
+    mobj s = Mnull;
+    MINIM_GC_PROTECT(s);
+
+    /* Empty + plain. */
+    s = Mstring_from_bytes("", 0);
+    CHECK_WRITE(s, "\"\"", "write: empty string");
+
+    s = Mstring_from_bytes("hello", 5);
+    CHECK_WRITE(s, "\"hello\"", "write: hello");
+
+    /* Each escape. */
+    s = Mstring_from_bytes("a\\b", 3);
+    CHECK_WRITE(s, "\"a\\\\b\"", "write: backslash escaped");
+    s = Mstring_from_bytes("a\"b", 3);
+    CHECK_WRITE(s, "\"a\\\"b\"", "write: quote escaped");
+    s = Mstring_from_bytes("a\nb", 3);
+    CHECK_WRITE(s, "\"a\\nb\"",  "write: newline escaped");
+    s = Mstring_from_bytes("a\tb", 3);
+    CHECK_WRITE(s, "\"a\\tb\"",  "write: tab escaped");
+    s = Mstring_from_bytes("a\rb", 3);
+    CHECK_WRITE(s, "\"a\\rb\"",  "write: CR escaped");
+
+    /* Multiple escapes in one string. */
+    s = Mstring_from_bytes("\\\"\n", 3);
+    CHECK_WRITE(s, "\"\\\\\\\"\\n\"", "write: multi escape");
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
+static void test_strings_roundtrip(void) {
+    Minit();
+    /* Reading `"..."` and writing it back yields the same source.
+     * Using the existing roundtrip helper drives Mread + Mwrite.*/
+    CHECK_RT("\"hello\"",      "\"hello\"",      "rt string: plain");
+    CHECK_RT("\"\"",           "\"\"",           "rt string: empty");
+    CHECK_RT("\"a\\nb\"",      "\"a\\nb\"",      "rt string: newline");
+    CHECK_RT("\"a\\tb\"",      "\"a\\tb\"",      "rt string: tab");
+    CHECK_RT("\"a\\rb\"",      "\"a\\rb\"",      "rt string: CR");
+    CHECK_RT("\"a\\\"b\"",     "\"a\\\"b\"",     "rt string: dquote");
+    CHECK_RT("\"a\\\\b\"",     "\"a\\\\b\"",     "rt string: backslash");
+    /* String inside a list. */
+    CHECK_RT("(\"hi\" \"there\")", "(\"hi\" \"there\")",
+             "rt string: in list");
+    Mshutdown();
+}
+
+static void test_display(void) {
+    Minit();
+    MINIM_GC_FRAME_BEGIN;
+    mobj s = Mnull;
+    MINIM_GC_PROTECT(s);
+
+    /* Display strings as raw bytes — no quotes, no escapes. */
+    s = Mstring_from_bytes("hello", 5);
+    CHECK_DISPLAY(s, "hello", "display: string raw");
+    s = Mstring_from_bytes("a\nb", 3);
+    CHECK_DISPLAY(s, "a\nb", "display: string with embedded newline");
+    s = Mstring_from_bytes("a\\b", 3);
+    CHECK_DISPLAY(s, "a\\b", "display: string with backslash unescaped");
+
+    /* Display a char as the raw byte. */
+    CHECK_DISPLAY(Mchar('A'),  "A",  "display: char A");
+    CHECK_DISPLAY(Mchar(' '),  " ",  "display: char space");
+    CHECK_DISPLAY(Mchar('\n'), "\n", "display: char newline");
+
+    /* Non-ASCII codepoints in chars fall back to canonical form. */
+    CHECK_DISPLAY(Mchar(0x10FFFF), "#\\x10FFFF",
+                  "display: non-ASCII char canonical fallback");
+
+    /* Other types are mode-independent. */
+    CHECK_DISPLAY(Mtrue, "#t", "display: #t same as write");
+    CHECK_DISPLAY(Mfixnum(42), "42", "display: fixnum same as write");
+
+    /* Display propagates through structure: a string inside a list
+     * displays without quotes even though the list shape stays. */
+    {
+        mreader r;
+        mreader_init_string(&r, "(\"hi\" #\\a 1)");
+        mobj lst = Mread(&r);
+        MINIM_GC_PROTECT(lst);
+        CHECK_DISPLAY(lst, "(hi a 1)",
+                      "display: propagates through list");
+    }
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
 int main(void) {
     test_immediates();
     test_fixnums();
@@ -320,6 +436,9 @@ int main(void) {
     test_procedures();
     test_chars();
     test_char_roundtrip();
+    test_strings_write();
+    test_strings_roundtrip();
+    test_display();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

@@ -6,21 +6,38 @@
 #include <string.h>
 
 /* ----------------------------------------------------------------------
- * Pair / list
+ * `Mwrite` (canonical / readable) and `Mdisplay` (raw) share their
+ * implementation: the same recursive walker, parameterized on a mode
+ * flag. Only the string and character arms diverge. Every other type
+ * — pairs, vectors, numbers, immediates, procedures — produces the
+ * same output regardless of mode.
  * -------------------------------------------------------------------- */
 
-static void write_pair(mobj v, FILE *out) {
+typedef enum {
+    WRITER_WRITE,
+    WRITER_DISPLAY,
+} writer_mode;
+
+static void write_to(mobj v, FILE *out, writer_mode mode);
+
+/* ----------------------------------------------------------------------
+ * Pair / list — recurses with the outer mode so that
+ * `(display (list "hi" #\a))` prints `(hi a)` and the corresponding
+ * `(write ...)` prints `("hi" #\a)`.
+ * -------------------------------------------------------------------- */
+
+static void write_pair(mobj v, FILE *out, writer_mode mode) {
     fputc('(', out);
-    Mwrite(Mcar(v), out);
+    write_to(Mcar(v), out, mode);
     mobj cur = Mcdr(v);
     while (Mpairp(cur)) {
         fputc(' ', out);
-        Mwrite(Mcar(cur), out);
+        write_to(Mcar(cur), out, mode);
         cur = Mcdr(cur);
     }
     if (!Mnullp(cur)) {
         fputs(" . ", out);
-        Mwrite(cur, out);
+        write_to(cur, out, mode);
     }
     fputc(')', out);
 }
@@ -29,17 +46,17 @@ static void write_pair(mobj v, FILE *out) {
  * Vector
  * -------------------------------------------------------------------- */
 
-static void write_vector(mobj v, FILE *out) {
+static void write_vector(mobj v, FILE *out, writer_mode mode) {
     size_t len = Mvector_length(v);
     if (len == 0) {
         fputs("#()", out);
         return;
     }
     fputs("#(", out);
-    Mwrite(Mvector_ref(v, 0), out);
+    write_to(Mvector_ref(v, 0), out, mode);
     for (size_t i = 1; i < len; i++) {
         fputc(' ', out);
-        Mwrite(Mvector_ref(v, i), out);
+        write_to(Mvector_ref(v, i), out, mode);
     }
     fputc(')', out);
 }
@@ -67,14 +84,26 @@ static void write_flonum(mobj v, FILE *out) {
 /* ----------------------------------------------------------------------
  * Character
  *
- * Writer is canonical: 9 R7RS named chars get their `#\<name>`
- * spelling, printable ASCII gets `#\<single>`, everything else
- * goes out as `#\x<hex>` with no leading zeros. The reader accepts
- * the same set; round-trips are stable.
+ * Write mode is canonical: 9 R7RS named chars get their `#\<name>`
+ * spelling, printable ASCII gets `#\<single>`, everything else goes
+ * out as `#\x<hex>` with no leading zeros. The reader accepts the same
+ * set; round-trips are stable.
+ *
+ * Display mode emits the raw byte for codepoints up to 0x7F (the v1
+ * ASCII range). Codepoints beyond that fall back to the canonical hex
+ * form — there's no single-byte representation for them, and v1
+ * doesn't have UTF-8 string support to do otherwise.
  * -------------------------------------------------------------------- */
 
-static void write_char(mobj v, FILE *out) {
+static void write_char(mobj v, FILE *out, writer_mode mode) {
     mchar c = Mchar_val(v);
+    if (mode == WRITER_DISPLAY) {
+        if (c <= 0x7F) {
+            fputc((int)c, out);
+            return;
+        }
+        /* Fall through to canonical form below. */
+    }
     switch (c) {
     case 0x00: fputs("#\\null",      out); return;
     case 0x07: fputs("#\\alarm",     out); return;
@@ -96,6 +125,41 @@ static void write_char(mobj v, FILE *out) {
     /* Hex form, unpadded. The reader accepts variable-length hex
      * digits; matching that here keeps `#\xC` etc. minimal. */
     fprintf(out, "#\\x%X", (unsigned int)c);
+}
+
+/* ----------------------------------------------------------------------
+ * String
+ *
+ * Write mode wraps the content in `"..."` and escapes `\\ \" \n \t \r`
+ * — the four escapes the reader accepts, exactly inverted. v1 strings
+ * are ASCII-only (the reader rejects bytes >= 0x80), so any other byte
+ * 0x00..0x7F goes out raw. Round-trip works because the reader treats
+ * non-special bytes as literal content.
+ *
+ * Display mode emits the raw bytes verbatim, which is the whole point
+ * of the write/display split.
+ * -------------------------------------------------------------------- */
+
+static void write_string(mobj v, FILE *out, writer_mode mode) {
+    size_t len = Mstring_length(v);
+    const char *bytes = Mstring_bytes(v);
+    if (mode == WRITER_DISPLAY) {
+        if (len > 0) fwrite(bytes, 1, len, out);
+        return;
+    }
+    fputc('"', out);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)bytes[i];
+        switch (c) {
+        case '\\': fputs("\\\\", out); break;
+        case '"':  fputs("\\\"", out); break;
+        case '\n': fputs("\\n",  out); break;
+        case '\t': fputs("\\t",  out); break;
+        case '\r': fputs("\\r",  out); break;
+        default:   fputc((int)c, out); break;
+        }
+    }
+    fputc('"', out);
 }
 
 /* ----------------------------------------------------------------------
@@ -128,13 +192,13 @@ static void write_named_procedure(mobj name, FILE *out) {
  * header redundantly.
  * -------------------------------------------------------------------- */
 
-void Mwrite(mobj v, FILE *out) {
+static void write_to(mobj v, FILE *out, writer_mode mode) {
     switch (v & MTAG_MASK) {
     case MTAG_FIXNUM:
         fprintf(out, "%" PRIdPTR, (intptr_t)Mfixnum_val(v));
         return;
     case MTAG_PAIR:
-        write_pair(v, out);
+        write_pair(v, out, mode);
         return;
     case MTAG_FLONUM:
         write_flonum(v, out);
@@ -149,7 +213,7 @@ void Mwrite(mobj v, FILE *out) {
         /* Chars are immediates whose low byte is MCHAR_TAG; check
          * before the constant-equality switch so character values
          * reach the right writer. */
-        if (Mcharp(v)) { write_char(v, out); return; }
+        if (Mcharp(v)) { write_char(v, out, mode); return; }
         switch (v) {
         case Mfalse: fputs("#f", out);      return;
         case Mtrue:  fputs("#t", out);      return;
@@ -161,7 +225,8 @@ void Mwrite(mobj v, FILE *out) {
     case MTAG_TYPED_OBJ: {
         mobj header = *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ));
         switch (header & MSEC_MASK) {
-        case MSEC_VECTOR: write_vector(v, out); return;
+        case MSEC_VECTOR: write_vector(v, out, mode); return;
+        case MSEC_STRING: write_string(v, out, mode); return;
         case MSEC_KONT:   fputs("#<continuation>", out); return;
         case MSEC_ENV:    fputs("#<environment>", out); return;
         case MSEC_PRIM:   write_named_procedure(Mprim_name(v), out); return;
@@ -169,7 +234,15 @@ void Mwrite(mobj v, FILE *out) {
     }
     }
 
-    /* Reserved primary tag (0x4 — future strings) or a corrupt
-     * value. Should not reach here in v1. */
+    /* Reserved primary tag (0x4) or a corrupt value. Should not
+     * reach here in v1. */
     fputs("#<garbage>", out);
+}
+
+void Mwrite(mobj v, FILE *out) {
+    write_to(v, out, WRITER_WRITE);
+}
+
+void Mdisplay(mobj v, FILE *out) {
+    write_to(v, out, WRITER_DISPLAY);
 }

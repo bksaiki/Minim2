@@ -384,6 +384,84 @@ static void test_char_errors(void) {
     Mshutdown();
 }
 
+/* Helper: read one string literal and assert the result is a string
+ * with `expected_len` bytes equal to `expected`. The mobj is held
+ * across the comparison work; under stress mode we can't keep it as
+ * a bare local because the helper does no further allocation, but
+ * our caller might. The comparison itself doesn't allocate. */
+static void check_string_literal(const char *src, const char *expected,
+                                 size_t expected_len, const char *msg) {
+    mobj v = read_one(src);
+    CHECK(Mstringp(v), msg);
+    CHECK(Mstring_length(v) == expected_len, msg);
+    CHECK(memcmp(Mstring_bytes(v), expected, expected_len) == 0, msg);
+}
+
+static void test_string_literals(void) {
+    Minit();
+
+    /* Empty string. */
+    check_string_literal("\"\"", "", 0, "string: empty");
+
+    /* Plain ASCII. */
+    check_string_literal("\"hello\"", "hello", 5, "string: hello");
+
+    /* Mixed printable: spaces, punctuation, digits. */
+    check_string_literal("\"a b 1 2 ! ?\"", "a b 1 2 ! ?", 11,
+                         "string: mixed printable");
+
+    /* Each of the four named escapes. */
+    check_string_literal("\"\\\\\"", "\\", 1, "string: \\\\ → backslash");
+    check_string_literal("\"\\\"\"", "\"", 1, "string: \\\" → quote");
+    check_string_literal("\"\\n\"",  "\n", 1, "string: \\n → newline");
+    check_string_literal("\"\\t\"",  "\t", 1, "string: \\t → tab");
+    check_string_literal("\"\\r\"",  "\r", 1, "string: \\r → return");
+
+    /* Escapes mixed with literal content. */
+    check_string_literal("\"line\\none\"", "line\none", 8,
+                         "string: escape inside content");
+    check_string_literal("\"a\\\\b\\\"c\"", "a\\b\"c", 5,
+                         "string: multiple escapes");
+
+    /* Strings inside lists round-trip. */
+    {
+        mobj v = read_one("(\"hi\" \"there\")");
+        CHECK(Mpairp(v),                    "string in list: pair");
+        CHECK(Mstringp(Mcar(v)),            "string in list: car");
+        CHECK(Mstring_length(Mcar(v)) == 2,
+              "string in list: length");
+        CHECK(memcmp(Mstring_bytes(Mcar(v)), "hi", 2) == 0,
+              "string in list: contents");
+        CHECK(Mstringp(Mcar(Mcdr(v))),      "string in list: cadr");
+    }
+
+    Mshutdown();
+}
+
+static void test_string_errors(void) {
+    Minit();
+    /* Unterminated. */
+    CHECK(parse_caught_error("\"hello"),
+          "string error: unterminated literal");
+    CHECK(parse_caught_error("\""),
+          "string error: just opening quote");
+
+    /* Unknown escape. */
+    CHECK(parse_caught_error("\"\\q\""),
+          "string error: unknown escape \\q");
+    CHECK(parse_caught_error("\"\\0\""),
+          "string error: unknown escape \\0 (no octal in v1)");
+
+    /* Backslash at EOF. */
+    CHECK(parse_caught_error("\"\\"),
+          "string error: backslash before EOF");
+
+    /* Non-ASCII bytes are rejected (v1 limitation). */
+    CHECK(parse_caught_error("\"\xC2\xA0\""),
+          "string error: non-ASCII byte rejected");
+    Mshutdown();
+}
+
 int main(void) {
     test_immediates();
     test_fixnums();
@@ -401,6 +479,8 @@ int main(void) {
     test_char_single();
     test_char_hex();
     test_char_errors();
+    test_string_literals();
+    test_string_errors();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

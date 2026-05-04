@@ -131,7 +131,7 @@ void eval_shutdown(void) {
  * ====================================================================== */
 
 static bool is_self_evaluating(mobj v) {
-    return Mfixnump(v) || Mflonump(v) || Mimmediatep(v) || Mvectorp(v);
+    return Mfixnump(v) || Mflonump(v) || Mimmediatep(v) || Mvectorp(v) || Mstringp(v);
 }
 
 /* Top-level env helpers. The environment is an alist of (sym . val)

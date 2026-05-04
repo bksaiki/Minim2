@@ -396,7 +396,14 @@ void mreader_init_string(mreader *r, const char *s);
 void mreader_init_file(mreader *r, FILE *fp);
 
 mobj Mread(mreader *r);
+
+/* `Mwrite` emits the canonical / readable form (the inverse of
+ * `Mread` for the value types that have a source-level syntax).
+ * `Mdisplay` emits the "human" form: strings without quotes or
+ * escapes, characters as raw bytes. Other types are identical
+ * between the two modes. Neither allocates on the GC heap. */
 void Mwrite(mobj v, FILE *out);
+void Mdisplay(mobj v, FILE *out);
 
 /* ----------------------------------------------------------------------
  * Structural equality

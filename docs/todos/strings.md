@@ -83,29 +83,50 @@ string operations.
 - [x] Default + stress pass.
 
 ## Phase 2 — reader
-- [ ] `"..."` literal recognition in `src/read.c`.
-- [ ] Escapes: `\\`, `\"`, `\n`, `\t`, `\r`. Anything else after
-      a backslash is `Merror`.
-- [ ] Tests in `tests/test_parser.c` covering empty string,
-      simple ASCII, every supported escape, and unterminated /
-      bad-escape error paths.
-- [ ] Default + stress pass.
+- [x] `"..."` literal recognition in `src/read.c` via a new
+      `read_string` helper, dispatched from `read_datum`.
+- [x] Escapes: `\\`, `\"`, `\n`, `\t`, `\r`. Anything else after
+      a backslash is `Merror`. Backslash-before-EOF and the
+      missing-close-quote case both error too.
+- [x] Non-ASCII bytes (>= 0x80) are rejected at read time. The
+      reader is the canonical place for the v1 ASCII contract
+      since `Mstring_from_bytes` trusts its input.
+- [x] Tests in `tests/test_parser.c`: `test_string_literals`
+      covers empty, plain, mixed-printable, each of the four
+      named escapes, escapes-mixed-with-content, multiple-
+      escapes, and string-inside-list. `test_string_errors`
+      covers unterminated, bare opening quote, unknown escape,
+      `\\0` (no octal in v1), trailing backslash, and a
+      non-ASCII byte (`\xC2\xA0`).
+- [x] Default + stress pass.
 
 ## Phase 3 — writer
-- [ ] Split: keep `Mwrite` (canonical / readable form), add
-      `Mdisplay(v, FILE *)` (raw form). Internally factor through
-      a single helper that takes a mode flag.
-- [ ] String formatting:
+- [x] Split: factored the dispatch into a `write_to(v, out, mode)`
+      worker; `Mwrite` and `Mdisplay` are thin wrappers that pick
+      `WRITER_WRITE` or `WRITER_DISPLAY`. Recursive helpers
+      (`write_pair`, `write_vector`) take and propagate the mode.
+- [x] String formatting:
       - `write` mode: `"..."` with `\\`, `\"`, `\n`, `\t`, `\r`
-        escapes; control chars below 0x20 render as `\x%02X;` (or
-        a TODO if we defer `\xHH;` reader-side too — for v1 they
-        can render as `?` since round-tripping isn't required for
-        non-ASCII bytes that can't enter a string anyway).
-      - `display` mode: raw bytes verbatim.
-- [ ] Tests in `tests/test_writer.c`:
-      - `write` round-trips for plain + escape-heavy strings.
-      - `display` emits raw content (capture via `open_memstream`).
-- [ ] Default + stress pass.
+        escapes — exactly the inverse of the reader. Control
+        bytes 0x00..0x1F (other than `\n`/`\t`/`\r`) and 0x7F are
+        emitted raw; the reader accepts them as literal content,
+        so round-trip still works. Hex escapes (`\xHH;`) are
+        deferred (see Out of scope) and not needed today since
+        v1 strings are ASCII-only.
+      - `display` mode: raw bytes verbatim, no quotes, no
+        escapes.
+- [x] Character-arm fork: `display` of a char with codepoint
+      <= 0x7F emits the raw byte; non-ASCII codepoints fall back
+      to the canonical `#\<name>` / `#\<single>` / `#\x<hex>`
+      form since v1 has no UTF-8 byte path.
+- [x] Tests in `tests/test_writer.c`: `test_strings_write`
+      covers each escape and a multi-escape mix;
+      `test_strings_roundtrip` drives `Mread` + `Mwrite` over
+      every escape and a string-in-list; `test_display` covers
+      strings raw, embedded-newline raw, char display, non-ASCII
+      char fallback, mode-independence for non-string types, and
+      mode propagation through a list.
+- [x] Default + stress pass.
 
 ## Phase 4 — primitives
 - [ ] Predicates / measurement: `string?`, `string-length`.
