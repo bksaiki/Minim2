@@ -102,6 +102,34 @@ mobj Mvector(size_t length, mobj fill) {
     return (mobj)((uintptr_t)p | MTAG_TYPED_OBJ);
 }
 
+/*-----------------------------------------------------------------------
+ * String: tag=0x7 (typed obj) sec=MSEC_STRING. Header packs the byte
+ * count in the upper bits; the bytes themselves live inline after
+ * the header word, padded to 16-byte alignment. Strings hold no
+ * mobjs, so the GC's scan skips them entirely.
+ *
+ * No mobj arguments to protect — `fill` is a codepoint, `src` and
+ * `length` are raw C data. The bytes from `src` are copied verbatim;
+ * v1's ASCII-only contract is enforced one layer above (reader,
+ * `make-string` primitive).
+ * -------------------------------------------------------------------- */
+
+mobj Mstring(size_t length, mchar fill) {
+    char *p = gc_alloc(minim_string_size(length));
+    mobj header = ((mobj)length << 4) | MSEC_STRING;
+    ((mobj *)p)[0] = header;
+    if (length > 0) memset(p + 8, (int)(unsigned char)fill, length);
+    return (mobj)((uintptr_t)p | MTAG_TYPED_OBJ);
+}
+
+mobj Mstring_from_bytes(const char *src, size_t length) {
+    char *p = gc_alloc(minim_string_size(length));
+    mobj header = ((mobj)length << 4) | MSEC_STRING;
+    ((mobj *)p)[0] = header;
+    if (length > 0) memcpy(p + 8, src, length);
+    return (mobj)((uintptr_t)p | MTAG_TYPED_OBJ);
+}
+
 /* ----------------------------------------------------------------------
  * Environment frame: tag=0x7, 2 slots [rib, parent]
  * -------------------------------------------------------------------- */

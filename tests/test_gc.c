@@ -406,6 +406,60 @@ static void test_prim_survives_gc(void) {
     Mshutdown();
 }
 
+/* String GC — bytes are inline, no mobj children. The GC's
+ * scan_fields arm for MSEC_STRING is a no-op; getting that wrong
+ * would either skip the size advance (corrupting subsequent
+ * scans) or treat random bytes as tagged values and forward
+ * garbage. */
+static void test_string_survives_gc(void) {
+    Minit();
+    MINIM_GC_FRAME_BEGIN;
+
+    /* Declare-then-protect-then-assign: under stress mode every
+     * allocation collects, so a sibling allocation between two
+     * unprotected reads would strand the earlier one. */
+    mobj s1 = Mnull, s2 = Mnull, v = Mnull;
+    MINIM_GC_PROTECT(s1);
+    MINIM_GC_PROTECT(s2);
+    MINIM_GC_PROTECT(v);
+
+    s1 = Mstring_from_bytes("hello", 5);
+    s2 = Mstring(8, '*');
+    v = Mvector(2, Mnull);
+
+    /* Mix strings into a vector slot; the vector survives GC and the
+     * string slot remains both string-typed and string-equal. */
+    Mvector_set(v, 0, s1);
+    Mvector_set(v, 1, s2);
+
+    gc_collect(0);
+
+    CHECK(Mstringp(s1) && Mstring_length(s1) == 5,
+          "string survives GC: length");
+    CHECK(memcmp(Mstring_bytes(s1), "hello", 5) == 0,
+          "string survives GC: bytes intact");
+
+    /* The string in the vector slot has been forwarded to the new
+     * to-space alongside the vector. */
+    CHECK(Mstringp(Mvector_ref(v, 0)),
+          "string in vector slot survives GC: type");
+    CHECK(Mstring_length(Mvector_ref(v, 1)) == 8,
+          "string in vector slot survives GC: length");
+    CHECK(Mstring_ref(Mvector_ref(v, 1), 0) == '*',
+          "string in vector slot survives GC: contents");
+
+    /* Trigger another collection by allocating churn. The string
+     * slots stay valid because they're protected directly and via
+     * the vector. */
+    for (int i = 0; i < 2000; i++)
+        (void)Mcons(Mfixnum(i), Mnull);
+    CHECK(memcmp(Mstring_bytes(s1), "hello", 5) == 0,
+          "string survives heap churn");
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
 int main(void) {
     test_cons_survives_gc();
     test_vector_survives_gc();
@@ -417,6 +471,7 @@ int main(void) {
     test_env_survives_gc();
     test_kont_survives_gc();
     test_prim_survives_gc();
+    test_string_survives_gc();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

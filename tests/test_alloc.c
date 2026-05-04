@@ -108,11 +108,84 @@ static void test_kinds_disjoint(void) {
     Mshutdown();
 }
 
+/* -----------------------------------------------------------------------
+ * String allocation, indexing, and disjointness from the other typed-obj
+ * kinds. v1 is ASCII-only, so every byte we exercise stays in 0..0x7F.
+ * --------------------------------------------------------------------- */
+
+static void test_string_smoke(void) {
+    Minit();
+    MINIM_GC_FRAME_BEGIN;
+
+    /* Declare-then-protect-then-assign so stress mode can't strand
+     * an earlier allocation across a later one. */
+    mobj empty = Mnull, s = Mnull, hello = Mnull;
+    MINIM_GC_PROTECT(empty);
+    MINIM_GC_PROTECT(s);
+    MINIM_GC_PROTECT(hello);
+
+    empty = Mstring(0, 'x');
+    CHECK(Mstringp(empty),                  "string: empty stringp");
+    CHECK(Mstring_length(empty) == 0,       "string: empty length 0");
+
+    /* `Mstring(N, c)` fills every byte. */
+    s = Mstring(5, 'a');
+    CHECK(Mstring_length(s) == 5,           "string: Mstring length");
+    for (size_t i = 0; i < 5; i++)
+        CHECK(Mstring_ref(s, i) == 'a',     "string: Mstring fill");
+
+    /* `Mstring_set` / `Mstring_ref` round-trip. */
+    Mstring_set(s, 2, 'Z');
+    CHECK(Mstring_ref(s, 2) == 'Z',         "string: set/ref roundtrip");
+    CHECK(Mstring_ref(s, 1) == 'a',         "string: set leaves siblings alone");
+
+    /* `Mstring_from_bytes` copies arbitrary input. */
+    hello = Mstring_from_bytes("hello", 5);
+    CHECK(Mstring_length(hello) == 5,       "string: from_bytes length");
+    CHECK(Mstring_ref(hello, 0) == 'h',     "string: from_bytes [0]=h");
+    CHECK(Mstring_ref(hello, 4) == 'o',     "string: from_bytes [4]=o");
+
+    /* Distinct strings live at distinct addresses. */
+    CHECK(s != hello,                       "string: distinct allocations");
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
+static void test_string_disjoint(void) {
+    Minit();
+    MINIM_GC_FRAME_BEGIN;
+
+    mobj s = Mnull, v = Mnull;
+    MINIM_GC_PROTECT(s);
+    MINIM_GC_PROTECT(v);
+
+    s = Mstring_from_bytes("abc", 3);
+    v = Mvector(2, Mfalse);
+
+    /* String matches only its own typed-obj predicate. */
+    CHECK( Mstringp(s) && !Mvectorp(s) && !Menvp(s) && !Mkontp(s) && !Mprimp(s),
+          "string: disjoint from other typed-obj kinds");
+    /* And other typed objects are not strings. */
+    CHECK(!Mstringp(v),                     "string: vector is not a string");
+    /* Non-typed-obj values are not strings either. */
+    CHECK(!Mstringp(Mfixnum(0)),            "string: fixnum is not a string");
+    CHECK(!Mstringp(Mfalse),                "string: #f is not a string");
+    CHECK(!Mstringp(Mchar('a')),            "string: char is not a string");
+    /* Strings are not procedures. */
+    CHECK(!Mprocedurep(s),                  "string: not a procedure");
+
+    MINIM_GC_FRAME_END;
+    Mshutdown();
+}
+
 int main(void) {
     test_cons_list_1000();
     test_flonum_heap_roundtrip();
     test_vector_smoke();
     test_kinds_disjoint();
+    test_string_smoke();
+    test_string_disjoint();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
 }

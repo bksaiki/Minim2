@@ -61,6 +61,7 @@ typedef unsigned char mbyte;
 #define MSEC_KONT       ((mobj)0x1)  /* continuation frame */
 #define MSEC_ENV        ((mobj)0x2)  /* lexical environment frame */
 #define MSEC_PRIM       ((mobj)0x3)  /* built-in procedure */
+#define MSEC_STRING     ((mobj)0x4)  /* mutable byte string */
 #define MSEC_MASK       ((mobj)0xF)
 
 /* Continuation frame kinds, stored as a fixnum in slot 0 of an
@@ -156,6 +157,7 @@ static inline bool Mvectorp(mobj v)  { return _Mhas_secondary(v, MSEC_VECTOR); }
 static inline bool Menvp(mobj v)     { return _Mhas_secondary(v, MSEC_ENV); }
 static inline bool Mkontp(mobj v)    { return _Mhas_secondary(v, MSEC_KONT); }
 static inline bool Mprimp(mobj v)    { return _Mhas_secondary(v, MSEC_PRIM); }
+static inline bool Mstringp(mobj v)  { return _Mhas_secondary(v, MSEC_STRING); }
 static inline bool Mprocedurep(mobj v) {
     /* Konts are first-class procedures: invoking one is what
      * `call/cc` hands back to the user — restore the saved chain
@@ -187,6 +189,23 @@ static inline size_t Mvector_length(mobj v) {
 }
 static inline mobj Mvector_ref(mobj v, size_t i) {
     return *((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ) + 1 + i);
+}
+
+/* Strings: typed object with byte length packed into the header
+ * (same layout as vectors, but the high bits store byte count
+ * instead of slot count). Bytes live inline immediately after the
+ * header word. ASCII-only for v1: every byte must be 0x00..0x7F. */
+static inline size_t Mstring_length(mobj v) {
+    return (size_t)(*((mobj *)((uintptr_t)v - MTAG_TYPED_OBJ)) >> 4);
+}
+static inline char *Mstring_bytes(mobj v) {
+    return (char *)((uintptr_t)v - MTAG_TYPED_OBJ) + 8;
+}
+static inline mchar Mstring_ref(mobj v, size_t i) {
+    return (mchar)(unsigned char)Mstring_bytes(v)[i];
+}
+static inline void Mstring_set(mobj v, size_t i, mchar c) {
+    Mstring_bytes(v)[i] = (char)c;
 }
 
 /* Generic typed-object slot count and slot access. Works for every
@@ -262,6 +281,14 @@ mobj Mcons(mobj car, mobj cdr);
 mobj Mvector(size_t length, mobj fill);
 mobj Mflonum(double d);
 mobj Mintern(const char *name);
+
+/* String constructors. `Mstring` allocates an uninitialized buffer
+ * and memsets it to `fill` (truncated to one byte). `Mstring_from_bytes`
+ * copies `length` bytes from `src`. v1 ASCII-only: callers should
+ * provide bytes 0x00..0x7F. Neither constructor allocates beyond
+ * `gc_alloc`, so plain C scalar args don't need protection. */
+mobj Mstring(size_t length, mchar fill);
+mobj Mstring_from_bytes(const char *src, size_t length);
 
 /* Evaluator object constructors. See docs/EVAL.md. */
 mobj Mclosure(mobj params, mobj body, mobj env, mobj name);

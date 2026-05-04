@@ -100,14 +100,15 @@ static size_t object_size(mobj v) {
     case MTAG_SYMBOL: return MINIM_SYMBOL_SIZE;
     case MTAG_CLOSURE: return MINIM_CLOSURE_SIZE;
     case MTAG_TYPED_OBJ: {
-        /* Every typed-object kind shares the same shape:
-         *   header = (slot_count << 4) | secondary_tag
-         * followed by `slot_count` machine-word slots. The byte size
-         * is the same formula regardless of secondary tag, so we just
-         * read the slot count and reuse the vector helper. */
+        /* Every typed-object kind packs a count in the header's
+         * upper bits; what the count *means* depends on the
+         * secondary tag. Strings count bytes and pad to 16; every
+         * other kind counts mobj-sized slots. */
         mobj header = *(mobj *)minim_untag(v);
-        size_t slots = (size_t)(header >> 4);
-        return minim_vector_size(slots);
+        mobj sec = header & MSEC_MASK;
+        size_t n = (size_t)(header >> 4);
+        if (sec == MSEC_STRING) return minim_string_size(n);
+        return minim_vector_size(n);
     }
     default:
         fprintf(stderr, "error: gc: object_size on non-heap tag %lx\n",
@@ -152,15 +153,21 @@ static void scan_fields(char *base, mobj tag, char *to_base) {
         break;
     }
     case MTAG_TYPED_OBJ: {
-        /* Uniform trace: forward every payload slot. The secondary tag
-         * dictates *interpretation* (which slot means what), but the
-         * GC only needs to know that every slot is either an mobj
-         * (forwarded) or a leaf-tagged raw word (no-op via
-         * minim_is_leaf inside forward_tagged). For MSEC_PRIM, the
-         * payload stores a leaf-tagged fixnum index into an out-of-heap
-         * function table, so forward_tagged naturally short-circuits
-         * without tracing it. */
+        /* Uniform trace for "normal" typed objects: forward every
+         * payload slot. The secondary tag dictates *interpretation*
+         * (which slot means what), but the GC only needs to know
+         * that every slot is either an mobj (forwarded) or a
+         * leaf-tagged raw word (no-op via minim_is_leaf inside
+         * forward_tagged). For MSEC_PRIM, the payload stores a
+         * leaf-tagged fixnum index into an out-of-heap function
+         * table, so forward_tagged naturally short-circuits.
+         *
+         * Exception: strings hold raw bytes, not mobjs. Walking
+         * them as if they were slots would interpret arbitrary
+         * byte patterns as tagged values and corrupt the heap. */
         mobj header = ((mobj *)base)[0];
+        mobj sec = header & MSEC_MASK;
+        if (sec == MSEC_STRING) break;
         size_t slots = (size_t)(header >> 4);
         mobj *payload = (mobj *)base + 1;
         for (size_t i = 0; i < slots; i++)
@@ -267,8 +274,10 @@ static void do_collect(void) {
         case MTAG_CLOSURE: sz = MINIM_CLOSURE_SIZE; break;
         case MTAG_TYPED_OBJ: {
             mobj header = ((mobj *)heap.scan)[0];
-            size_t length = (size_t)(header >> 4);
-            sz = minim_vector_size(length);
+            mobj sec = header & MSEC_MASK;
+            size_t n = (size_t)(header >> 4);
+            sz = (sec == MSEC_STRING) ? minim_string_size(n)
+                                      : minim_vector_size(n);
             break;
         }
         default:

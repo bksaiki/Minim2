@@ -21,6 +21,8 @@ to the legacy implementation it replaces.
 - [`todos/writer.md`](todos/writer.md) — s-expression writer.
 - [`todos/chars.md`](todos/chars.md) — character (`mchar`) type.
 - [`todos/eval.md`](todos/eval.md) — evaluator phases.
+- [`todos/imports.md`](todos/imports.md) — module imports + bundled core library.
+- [`todos/strings.md`](todos/strings.md) — string value type.
 
 ## Conventions
 

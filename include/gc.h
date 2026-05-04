@@ -31,6 +31,13 @@ static inline size_t minim_vector_size(size_t length) {
     return MINIM_ALIGN(8 + 8 * length);
 }
 
+/* String size: header word + bytes inline, padded to 16-byte
+ * alignment. Same packing as vectors but the upper header bits
+ * count bytes, not slots. */
+static inline size_t minim_string_size(size_t bytes) {
+    return MINIM_ALIGN(8 + bytes);
+}
+
 /* ----------------------------------------------------------------------
  * GC entry points
  * -------------------------------------------------------------------- */
