@@ -203,6 +203,12 @@ type-checking / contract layer belongs above this one.
       - [ ] I/O: `display`, `write`, `newline`, `read`. `display` only
         diverges from `write` once strings exist (chars are already
         readable both ways).
+      - [x] Errors: `error`. Kernel form — first arg is the message,
+        any number of irritants follow; everything is rendered with
+        `Mwrite` to stderr and the runtime unwinds via `Mraise` (the
+        public no-format counterpart of `Merror`). Until strings
+        exist there's no message/irritant distinction at the value
+        layer, so `(error 'foo 1 'bar)` is fine.
 - [x] Tests per group landed (`test_type_predicates`, `test_pairs`,
       `test_list`, `test_vectors`, `test_equality`,
       `test_prim_arity_error`). Default and `MINIM_GC_STRESS=ON`

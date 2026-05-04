@@ -285,6 +285,31 @@ static mobj prim_equal(mobj args) {
     return Mboolean(Mequal(Mcar(args), Mcar(Mcdr(args))));
 }
 
+/* ----------------------------------------------------------------------
+ * Errors
+ * -------------------------------------------------------------------- */
+
+/* (error message irritant ...) — kernel error procedure. Prints
+ * everything to stderr via Mwrite and unwinds. The message and any
+ * irritants can be any value type; until strings exist there's no
+ * meaningful distinction between them. Mwrite does not allocate, so
+ * no GC discipline is needed. */
+static mobj prim_error(mobj args) {
+    fputs("error: ", stderr);
+    Mwrite(Mcar(args), stderr);
+    for (mobj p = Mcdr(args); Mpairp(p); p = Mcdr(p)) {
+        fputc(' ', stderr);
+        Mwrite(Mcar(p), stderr);
+    }
+    fputc('\n', stderr);
+    Mraise();
+    return Mvoid; /* unreachable; Mraise does not return */
+}
+
+/* ----------------------------------------------------------------------
+ * Hash
+ * -------------------------------------------------------------------- */
+
 static mobj prim_hash(mobj args) {
     /* Mhash returns a 64-bit value; we shift it into a fixnum, which
      * drops the top 3 bits. The fixnum is signed, but downstream
@@ -344,4 +369,7 @@ void prims_register_all(void) {
     prim_register("eqv?",   prim_eqv,   2, 2);
     prim_register("equal?", prim_equal, 2, 2);
     prim_register("hash",   prim_hash,  1, 1);
+
+    /* Errors */
+    prim_register("error",  prim_error, 1, -1);
 }

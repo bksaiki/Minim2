@@ -26,7 +26,7 @@ size_t prim_fn_register(Mprim_fn fn) {
         size_t nc = prim_fn_cap == 0 ? 32 : prim_fn_cap * 2;
         Mprim_fn *nt = realloc(prim_fn_table, nc * sizeof(Mprim_fn));
         if (!nt) {
-            fprintf(stderr, "minim: prim_fn_register: OOM\n");
+            fprintf(stderr, "error: prim_fn_register: OOM\n");
             abort();
         }
         prim_fn_table = nt;
@@ -48,14 +48,7 @@ Mprim_fn Mprim_fn_of(mobj v) {
 jmp_buf *minim_error_jmp = NULL;
 size_t   minim_error_jmp_ssp = 0;
 
-void Merror(const char *fmt, ...) {
-    va_list ap;
-    fputs("minim: ", stderr);
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    fputc('\n', stderr);
-
+void Mraise(void) {
     if (minim_error_jmp != NULL) {
         /* Unwind any partial MINIM_GC_PROTECT frames left behind by
          * the longjmped-over code so the next operation sees a clean
@@ -64,6 +57,16 @@ void Merror(const char *fmt, ...) {
         longjmp(*minim_error_jmp, 1);
     }
     abort();
+}
+
+void Merror(const char *fmt, ...) {
+    va_list ap;
+    fputs("error: ", stderr);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fputc('\n', stderr);
+    Mraise();
 }
 
 /* ======================================================================

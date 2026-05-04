@@ -329,6 +329,12 @@ extern size_t   minim_error_jmp_ssp;
 
 void Merror(const char *fmt, ...);
 
+/* Trigger the error-handling unwind without writing to stderr.
+ * Used by callers that have already formatted their own message
+ * (e.g. the `error` primitive, which renders arbitrary values via
+ * Mwrite). Dispatches to the same longjmp-or-abort path as Merror. */
+void Mraise(void);
+
 /* ----------------------------------------------------------------------
  * Reader / writer
  *

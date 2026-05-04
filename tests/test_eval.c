@@ -1093,6 +1093,49 @@ static void test_hash_prim(void) {
     Mshutdown();
 }
 
+static void test_error_prim(void) {
+    Minit();
+    /* Each call goes through the same setjmp/longjmp dance the REPL
+     * uses. We don't capture stderr — the formatted output is
+     * verified by inspection of test logs — but the unwind itself is
+     * the contract worth asserting. */
+    jmp_buf jmp;
+    int errored;
+
+    /* Single-arg form: just the message. */
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    errored = 0;
+    if (setjmp(jmp) == 0) eval_str("(error 'oops)"); else errored = 1;
+    minim_error_jmp = NULL;
+    CHECK(errored, "error: single-arg unwinds");
+
+    /* Multi-arg form: message + irritants of mixed types. */
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    errored = 0;
+    if (setjmp(jmp) == 0) eval_str("(error 'expected 1 'got '(2 3))");
+    else errored = 1;
+    minim_error_jmp = NULL;
+    CHECK(errored, "error: multi-arg unwinds");
+
+    /* error inside a let — the unwind must restore the shadow stack. */
+    minim_error_jmp = &jmp;
+    minim_error_jmp_ssp = minim_ssp;
+    errored = 0;
+    if (setjmp(jmp) == 0) eval_str("(let ((x 1)) (error 'inside x))");
+    else errored = 1;
+    minim_error_jmp = NULL;
+    CHECK(errored, "error: from inside let unwinds");
+
+    /* After unwinding, the runtime should be ready for more work —
+     * eval state and shadow stack got reset, so a fresh eval succeeds. */
+    CHECK(Mfixnum_val(eval_str("(+ 1 2)")) == 3,
+          "error: runtime usable after unwind");
+
+    Mshutdown();
+}
+
 static void test_prim_arity_error(void) {
     Minit();
     jmp_buf jmp;
@@ -1154,6 +1197,7 @@ int main(void) {
     test_arith_factorial();
     test_hash();
     test_hash_prim();
+    test_error_prim();
     test_prim_arity_error();
     TEST_REPORT();
     return tests_failed ? 1 : 0;
