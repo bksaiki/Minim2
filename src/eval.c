@@ -100,15 +100,30 @@ mobj eval_kont;
  * global root, so its entries' values are properly traced. */
 static mobj top_level_env;
 
+/* Kernel module environment. Holds every primitive registered via
+ * `prim_register`. Same alist shape as `top_level_env`. The
+ * `(import (prefix #%kernel ...))` form (added in Phase 2 of
+ * docs/todos/imports.md) walks this env to install prefixed names
+ * into top_level_env.
+ *
+ * Until Phase 3 of that tracker lands, `prim_register` populates
+ * BOTH this env and top_level_env so that existing tests
+ * referencing primitives by their bare names keep working. Once
+ * the bundled core library re-exports kernel under the canonical
+ * names, the dual-population goes away. */
+static mobj kernel_env;
+
 void eval_init(void) {
     eval_expr = Mnull;
     eval_env = Mnull;
     eval_kont = Mnull;
     top_level_env = Mnull;
+    kernel_env = Mnull;
     minim_protect(&eval_expr);
     minim_protect(&eval_env);
     minim_protect(&eval_kont);
     minim_protect(&top_level_env);
+    minim_protect(&kernel_env);
     prims_register_all();
 }
 
@@ -124,6 +139,7 @@ void eval_shutdown(void) {
     eval_env = 0;
     eval_kont = 0;
     top_level_env = 0;
+    kernel_env = 0;
 }
 
 /* ======================================================================
@@ -174,13 +190,48 @@ static void top_env_define(mobj sym, mobj val) {
     MINIM_GC_FRAME_END;
 }
 
-/* Bind `name` to a freshly-allocated primitive procedure in the
- * top-level env. Used by prims_register_all during eval_init. */
+/* Kernel env helpers. Same shape and discipline as the top-level
+ * env helpers above. */
+
+static bool kernel_env_lookup(mobj sym, mobj *out) {
+    for (mobj p = kernel_env; Mpairp(p); p = Mcdr(p)) {
+        mobj entry = Mcar(p);
+        if (Mcar(entry) == sym) {
+            *out = Mcdr(entry);
+            return true;
+        }
+    }
+    return false;
+}
+
+static void kernel_env_define(mobj sym, mobj val) {
+    for (mobj p = kernel_env; Mpairp(p); p = Mcdr(p)) {
+        mobj entry = Mcar(p);
+        if (Mcar(entry) == sym) {
+            Mset_cdr(entry, val);
+            return;
+        }
+    }
+    MINIM_GC_FRAME_BEGIN;
+    MINIM_GC_PROTECT(sym);
+    MINIM_GC_PROTECT(val);
+    mobj entry = Mcons(sym, val);
+    MINIM_GC_PROTECT(entry);
+    kernel_env = Mcons(entry, kernel_env);
+    MINIM_GC_FRAME_END;
+}
+
+/* Bind `name` to a freshly-allocated primitive procedure. Populates
+ * the kernel env (always) and the top-level env (transitionally —
+ * see the kernel_env comment above). Phase 3 of docs/todos/imports.md
+ * removes the top_env_define call once core.scm re-exports the
+ * canonical names. */
 void prim_register(const char *name, Mprim_fn fn,
                    intptr_t arity_min, intptr_t arity_max) {
     MINIM_GC_FRAME_BEGIN;
     mobj p = Mprim(name, fn, arity_min, arity_max);
     MINIM_GC_PROTECT(p);
+    kernel_env_define(Mprim_name(p), p);
     top_env_define(Mprim_name(p), p);
     MINIM_GC_FRAME_END;
 }
