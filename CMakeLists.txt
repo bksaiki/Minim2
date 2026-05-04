@@ -11,6 +11,20 @@ option(MINIM_GC_STRESS "Trigger a full GC on every allocation (debug)" OFF)
 # (the `minim` binary plus every test target) links against one
 # already-compiled archive instead of recompiling the runtime per
 # target.
+# Bake lib/core.scm into a generated header. configure_file runs at
+# CMake-configure time; CMAKE_CONFIGURE_DEPENDS makes editing the .scm
+# trigger a re-configure (and thus a re-bake) on the next build.
+set_property(DIRECTORY APPEND PROPERTY
+    CMAKE_CONFIGURE_DEPENDS lib/core.scm)
+file(READ ${CMAKE_SOURCE_DIR}/lib/core.scm CORE_LIB_HEX HEX)
+string(REGEX REPLACE "(..)" "0x\\1, " CORE_LIB_BYTES "${CORE_LIB_HEX}")
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
+configure_file(
+    ${CMAKE_SOURCE_DIR}/src/core_lib_data.h.in
+    ${CMAKE_BINARY_DIR}/generated/core_lib_data.h
+    @ONLY
+)
+
 add_library(minim_rt STATIC
     src/alloc.c
     src/equal.c
@@ -24,8 +38,11 @@ add_library(minim_rt STATIC
 )
 
 # `include/` is part of the runtime's public-ish interface — anything
-# linking minim_rt needs the headers, so propagate via PUBLIC.
+# linking minim_rt needs the headers, so propagate via PUBLIC. The
+# generated core-lib header is implementation-private (only
+# system.c includes it), so it goes via PRIVATE.
 target_include_directories(minim_rt PUBLIC include)
+target_include_directories(minim_rt PRIVATE ${CMAKE_BINARY_DIR}/generated)
 
 if(MINIM_GC_STRESS)
     # Stress mode is a runtime-affecting compile-time flag. Make it

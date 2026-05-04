@@ -109,26 +109,35 @@ plus the new accessors.
 - [x] Default + stress pass.
 
 ## Phase 3 — core library
-- [ ] `lib/core.scm`:
-      - `(import (prefix #%kernel $))` first.
-      - One `(define <name> $<name>)` line per kernel primitive.
-      - `(define (caar p) ($car ($car p)))` ... up to `cddddr`
-        (28 procedures: every `c[ad]+r` of length 2..4).
-- [ ] Build-time embedding. CMake reads `lib/core.scm` and emits
-      `core_lib_data.h` containing
-      `static const char minim_core_lib[] = "...";`. Runtime
-      `#include`s the generated header. Build target depends on
-      the source `.scm` so editing it triggers a rebuild.
-- [ ] `core_lib_load(void)` in `src/system.c`: drive
+- [x] `lib/core.scm`: `(import #%kernel)` to bring every kernel
+      binding into the top-level env under its canonical name,
+      followed by the 28 R7RS pair accessors (every `c[ad]+r` of
+      length 2..4). Each accessor is written in the verbose
+      `(define name (lambda (p) ...))` form. The function-define
+      shorthand `(define (name . formals) body ...)` is held
+      until a macro layer exists; baking it into the evaluator
+      now would put the same sugar twice once macros land.
+- [x] Build-time embedding. CMake's `file(READ ... HEX)` plus a
+      regex turn `lib/core.scm` into a comma-separated byte array;
+      `configure_file` substitutes it into
+      `src/core_lib_data.h.in` and writes
+      `${CMAKE_BINARY_DIR}/generated/core_lib_data.h`. The header
+      sits on `minim_rt`'s PRIVATE include path. Editing
+      `lib/core.scm` triggers a re-configure via
+      `CMAKE_CONFIGURE_DEPENDS`.
+- [x] `core_lib_load(void)` in `src/system.c`: drives
       `Mread`/`Meval` over the embedded string until `Meof`.
-      Called from `Minit` after `eval_init`. Errors abort.
-- [ ] Drop `top_env_define` from `prim_register`. Kernel env is
-      now the only home for primitives; `core_lib_load` is what
-      populates `top_level_env` with the canonical names.
-- [ ] Tests in `tests/test_eval.c`: the R7RS pair accessors at
-      depths 2/3/4, plus a few compositional cases (e.g. `(cadr
-      '(1 2 3))` → 2, `(cddr '(1 2 3 4))` → `(3 4)`).
-- [ ] Default + stress pass.
+      Called from `Minit` after `eval_init`. No error handler is
+      installed during bootstrap; a failure aborts via
+      `Merror`'s default path.
+- [x] Dropped `top_env_define` from `prim_register`. Kernel env
+      is the only home for primitives; `core_lib_load` populates
+      the top-level env via `(import #%kernel)`.
+- [x] Tests in `tests/test_eval.c`: `test_define_function_form`
+      (square / sum-of-squares / fact / zero-formals) and
+      `test_pair_accessors` (depth-2 fully, sample of depth-3 and
+      depth-4 including `cadddr` and `cddddr`).
+- [x] Default + stress pass.
 
 ## Phase 4 — docs cleanup
 - [ ] `docs/EVAL.md`: short "Modules and imports" section pointing
@@ -147,5 +156,9 @@ plus the new accessors.
 - Loading from a path (a `load` primitive, file-relative imports).
 - Re-export forms in user libraries.
 - Hygienic macro layer that would normally accompany imports.
+  Function-define sugar `(define (name . formals) body ...)`
+  belongs to that layer and is not in the evaluator today; until
+  it lands, library code uses the verbose `(define name (lambda
+  formals body ...))` form (see `lib/core.scm`).
 - A proper "module" heap-object kind. The kernel is just an alist;
   any user-defined modules would warrant typing it.

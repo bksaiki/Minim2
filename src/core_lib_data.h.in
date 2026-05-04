@@ -1,0 +1,16 @@
+/* Generated from lib/core.scm by CMake at configure time.
+ * Do not edit. Changes to lib/core.scm trigger a re-configure
+ * via CMAKE_CONFIGURE_DEPENDS in CMakeLists.txt.
+ *
+ * The bytes are embedded as a hex array and null-terminated so
+ * `mreader_init_string` can consume them as an ordinary C string.
+ */
+
+#ifndef MINIM_CORE_LIB_DATA_H
+#define MINIM_CORE_LIB_DATA_H
+
+static const char minim_core_lib[] = {
+    @CORE_LIB_BYTES@ 0x00
+};
+
+#endif /* MINIM_CORE_LIB_DATA_H */

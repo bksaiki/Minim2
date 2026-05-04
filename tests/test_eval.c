@@ -991,6 +991,45 @@ static void test_arith_flonum(void) {
     Mshutdown();
 }
 
+static void test_pair_accessors(void) {
+    Minit();
+    /* All 28 R7RS c[ad]+r accessors of length 2..4, defined in
+     * lib/core.scm. Test depth-2 fully, then a sampling of
+     * depth-3 and depth-4. */
+
+    /* Depth 2. */
+    CHECK(Mfixnum_val(eval_str("(caar '((1 2) (3 4)))")) == 1,    "caar");
+    CHECK(Mfixnum_val(eval_str("(cadr '(1 2 3))")) == 2,           "cadr");
+    /* (cdar p) = (cdr (car p)). For ((1 2) (3 4)), car=(1 2), cdr=(2). */
+    {
+        mobj v = eval_str("(cdar '((1 2) (3 4)))");
+        CHECK(Mpairp(v) && Mfixnum_val(Mcar(v)) == 2 && Mnullp(Mcdr(v)),
+              "cdar: returns the rest of the first pair");
+    }
+    /* (cddr p) = (cdr (cdr p)). For (1 2 3 4), cdr=(2 3 4), cdr=(3 4). */
+    {
+        mobj v = eval_str("(cddr '(1 2 3 4))");
+        CHECK(Mpairp(v) && Mfixnum_val(Mcar(v)) == 3 && Mfixnum_val(Mcar(Mcdr(v))) == 4,
+              "cddr: drops first two");
+    }
+
+    /* Depth 3 — common ones. */
+    CHECK(Mfixnum_val(eval_str("(caddr '(1 2 3 4))")) == 3,
+          "caddr: (car (cdr (cdr p))) ⇒ third element");
+    CHECK(Mfixnum_val(eval_str("(caadr '(1 (2 3) 4))")) == 2,
+          "caadr: (car (car (cdr p))) ⇒ first elem of second");
+
+    /* Depth 4 — sampling. */
+    CHECK(Mfixnum_val(eval_str("(cadddr '(1 2 3 4 5))")) == 4,
+          "cadddr: fourth element");
+    {
+        mobj v = eval_str("(cddddr '(1 2 3 4 5 6))");
+        CHECK(Mpairp(v) && Mfixnum_val(Mcar(v)) == 5,
+              "cddddr: drops first four");
+    }
+    Mshutdown();
+}
+
 static void test_arith_factorial(void) {
     Minit();
     /* End-to-end integration with eval: recursive factorial. Exercises
@@ -1201,6 +1240,7 @@ int main(void) {
     test_arith_fixnum();
     test_arith_compare();
     test_arith_flonum();
+    test_pair_accessors();
     test_arith_factorial();
     test_hash();
     test_hash_prim();

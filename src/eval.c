@@ -102,16 +102,12 @@ mobj eval_kont;
 static mobj top_level_env;
 
 /* Kernel module environment. Holds every primitive registered via
- * `prim_register`. Same alist shape as `top_level_env`. The
- * `(import (prefix #%kernel ...))` form (added in Phase 2 of
- * docs/todos/imports.md) walks this env to install prefixed names
- * into top_level_env.
- *
- * Until Phase 3 of that tracker lands, `prim_register` populates
- * BOTH this env and top_level_env so that existing tests
- * referencing primitives by their bare names keep working. Once
- * the bundled core library re-exports kernel under the canonical
- * names, the dual-population goes away. */
+ * `prim_register`; same alist shape as `top_level_env`. User code
+ * reaches these via `(import #%kernel)` (canonical names) or
+ * `(import (prefix #%kernel <p>))` (prefixed); the bundled core
+ * library does this during `Minit`, which is what makes `car`/
+ * `+`/etc. visible in the top-level env. See
+ * docs/todos/imports.md. */
 static mobj kernel_env;
 
 void eval_init(void) {
@@ -222,18 +218,17 @@ static void kernel_env_define(mobj sym, mobj val) {
     MINIM_GC_FRAME_END;
 }
 
-/* Bind `name` to a freshly-allocated primitive procedure. Populates
- * the kernel env (always) and the top-level env (transitionally —
- * see the kernel_env comment above). Phase 3 of docs/todos/imports.md
- * removes the top_env_define call once core.scm re-exports the
- * canonical names. */
+/* Bind `name` to a freshly-allocated primitive procedure in the
+ * kernel env. The top-level env gets populated during `Minit` by
+ * `core_lib_load`, which evaluates `(import #%kernel)` from
+ * `lib/core.scm` and so installs every kernel binding under its
+ * canonical name. */
 void prim_register(const char *name, Mprim_fn fn,
                    intptr_t arity_min, intptr_t arity_max) {
     MINIM_GC_FRAME_BEGIN;
     mobj p = Mprim(name, fn, arity_min, arity_max);
     MINIM_GC_PROTECT(p);
     kernel_env_define(Mprim_name(p), p);
-    top_env_define(Mprim_name(p), p);
     MINIM_GC_FRAME_END;
 }
 
@@ -458,7 +453,13 @@ static void step_eval(void) {
              * at top level" by `eval_env` being Mnull — every let /
              * lambda / let-style form extends the env to an Menvp
              * frame, so anything that has been entered shows up as
-             * non-null here. */
+             * non-null here.
+             *
+             * The function-form sugar `(define (name . formals)
+             * body ...)` is intentionally NOT supported in the
+             * evaluator — it should land as a macro once the
+             * macro layer exists. Until then, write the verbose
+             * `(define name (lambda formals body ...))`. */
             if (Menvp(eval_env)) {
                 Merror("internal define not supported yet "
                        "(only top-level define is implemented)");
