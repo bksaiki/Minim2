@@ -35,6 +35,12 @@ bool Mequal(mobj a, mobj b) {
             return true;
         }
 
+        if (Mstringp(a) && Mstringp(b)) {
+            size_t len = Mstring_length(a);
+            if (Mstring_length(b) != len) return false;
+            return memcmp(Mstring_bytes(a), Mstring_bytes(b), len) == 0;
+        }
+
         if (Mflonump(a) && Mflonump(b)) {
             return Mflonum_val(a) == Mflonum_val(b);
         }
@@ -83,6 +89,17 @@ uint64_t Mhash(mobj v) {
         h = mix(h, (uint64_t)len);
         for (size_t i = 0; i < len; i++)
             h = mix(h, Mhash(Mvector_ref(v, i)));
+        return h;
+    }
+    if (Mstringp(v)) {
+        /* Distinct seed from vector so an empty vector and an empty
+         * string don't collide. Bytes folded one at a time. */
+        uint64_t h = 0x84B547B7CCE36F3DULL;
+        size_t len = Mstring_length(v);
+        h = mix(h, (uint64_t)len);
+        const char *bytes = Mstring_bytes(v);
+        for (size_t i = 0; i < len; i++)
+            h = mix(h, (uint64_t)(unsigned char)bytes[i]);
         return h;
     }
     if (Mflonump(v)) {

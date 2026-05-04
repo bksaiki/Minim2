@@ -129,19 +129,32 @@ string operations.
 - [x] Default + stress pass.
 
 ## Phase 4 — primitives
-- [ ] Predicates / measurement: `string?`, `string-length`.
-- [ ] Construction: `make-string` (1 or 2 args), `string`
-      (varargs of chars), `string-copy`.
-- [ ] Indexing: `string-ref`, `string-set!`. Bounds are not
-      checked at this layer per the "no type checking" rule
-      already in `prims.c`.
+- [x] Predicates / measurement: `string?` (added to the type-
+      predicate group), `string-length`.
+- [x] Construction: `make-string` (1 or 2 args; default fill is
+      `#\space`), `string` (varargs of chars; packs each as one
+      byte), `string-copy` (fresh allocation, distinct from the
+      source under `eq?`).
+- [x] Indexing: `string-ref` returns an `mchar`-wrapped byte;
+      `string-set!` truncates the supplied char to one byte.
+      Bounds are not checked here per the "no type checking"
+      rule already in `prims.c`.
+- [x] `Mequal` and `Mhash` extended for strings. `Mequal` does
+      `memcmp` on the bytes when both args are strings; `Mhash`
+      folds the bytes one at a time under a distinct seed
+      (`0x84B547B7CCE36F3DULL`) so an empty string doesn't
+      collide with the empty vector. Tests in `test_equality`
+      and `test_strings` exercise both via Scheme.
 - [ ] Comparison: `string=?`. (Lex `<?`/`>?` etc. deferred.)
 - [ ] Conversion: `string->list`, `list->string`,
       `string->symbol`, `symbol->string`. The symbol-side
       converters bridge to the existing intern table.
 - [ ] Concat: `string-append` (varargs).
 - [ ] I/O: `display`, `newline`. `display` goes to stdout.
-- [ ] Tests in `tests/test_eval.c`. Default + stress pass.
+- [x] Tests in `tests/test_eval.c`: `test_strings` covers the
+      seven new prims and `test_equality` adds string structural
+      cases (including the empty-string vs empty-vector
+      hash-seed disambiguation). Default + stress pass.
 
 ## Phase 5 — doc cleanup
 - [ ] `docs/GC.md`: Scope lists strings; `MTAG_TYPED_OBJ` row

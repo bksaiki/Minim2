@@ -2,6 +2,7 @@
 #include "internal.h"
 
 #include <math.h>
+#include <string.h>
 
 /* ======================================================================
  * Built-in primitive procedures.
@@ -37,6 +38,7 @@ static mobj prim_number_p(mobj args) {
 }
 static mobj prim_procedure_p(mobj args)  { return Mboolean(Mprocedurep(Mcar(args))); }
 static mobj prim_vector_p(mobj args)     { return Mboolean(Mvectorp(Mcar(args))); }
+static mobj prim_string_p(mobj args)     { return Mboolean(Mstringp(Mcar(args))); }
 static mobj prim_char_p(mobj args)       { return Mboolean(Mcharp(Mcar(args))); }
 static mobj prim_eof_object_p(mobj args) { return Mboolean(Meofp(Mcar(args))); }
 
@@ -95,6 +97,80 @@ static mobj prim_vector_set(mobj args) {
 
 static mobj prim_vector_length(mobj args) {
     return Mfixnum((intptr_t)Mvector_length(Mcar(args)));
+}
+
+/* ----------------------------------------------------------------------
+ * Strings
+ *
+ * v1 is ASCII-only and the prims don't validate that — same "no type
+ * checking" rule as the rest of the file. The reader enforces ASCII
+ * for literals; `make-string` / `string-set!` here truncate the
+ * codepoint to one byte and trust the caller.
+ *
+ * GC discipline: Mstring allocates, so any mobj read out of `args`
+ * (in particular the source bytes for `string-copy` and the chars
+ * for `(string ...)`) must be re-read from a protected slot after
+ * the allocation — the bare `args` parameter goes stale otherwise.
+ * -------------------------------------------------------------------- */
+
+static mobj prim_string_length(mobj args) {
+    return Mfixnum((intptr_t)Mstring_length(Mcar(args)));
+}
+
+static mobj prim_make_string(mobj args) {
+    /* (make-string k)        — fill defaults to #\space.
+     * (make-string k c)      — fill with c. */
+    intptr_t n = Mfixnum_val(Mcar(args));
+    mobj rest = Mcdr(args);
+    mchar fill = Mpairp(rest) ? Mchar_val(Mcar(rest)) : (mchar)' ';
+    return Mstring((size_t)n, fill);
+}
+
+static mobj prim_string(mobj args) {
+    /* (string c1 c2 ...) — pack each char's codepoint as one byte. */
+    size_t n = 0;
+    for (mobj p = args; Mpairp(p); p = Mcdr(p)) n++;
+    MINIM_GC_FRAME_BEGIN;
+    mobj s = Mnull;
+    MINIM_GC_PROTECT(args);
+    MINIM_GC_PROTECT(s);
+    s = Mstring(n, 0);
+    /* No further allocation; bytes pointer stays valid. Re-walk
+     * `args` (now post-GC) and pack. */
+    char *bytes = Mstring_bytes(s);
+    size_t i = 0;
+    for (mobj p = args; Mpairp(p); p = Mcdr(p), i++) {
+        bytes[i] = (char)(unsigned char)Mchar_val(Mcar(p));
+    }
+    MINIM_GC_FRAME_END;
+    return s;
+}
+
+static mobj prim_string_copy(mobj args) {
+    /* Allocate first, then memcpy from the (post-GC) source bytes.
+     * Reading `Mstring_bytes(src)` *before* the alloc would give a
+     * pointer that the GC might invalidate during `Mstring`. */
+    size_t len = Mstring_length(Mcar(args));
+    MINIM_GC_FRAME_BEGIN;
+    mobj dst = Mnull;
+    MINIM_GC_PROTECT(args);
+    MINIM_GC_PROTECT(dst);
+    dst = Mstring(len, 0);
+    memcpy(Mstring_bytes(dst), Mstring_bytes(Mcar(args)), len);
+    MINIM_GC_FRAME_END;
+    return dst;
+}
+
+static mobj prim_string_ref(mobj args) {
+    return Mchar(Mstring_ref(Mcar(args),
+                             (size_t)Mfixnum_val(Mcar(Mcdr(args)))));
+}
+
+static mobj prim_string_set(mobj args) {
+    Mstring_set(Mcar(args),
+                (size_t)Mfixnum_val(Mcar(Mcdr(args))),
+                Mchar_val(Mcar(Mcdr(Mcdr(args)))));
+    return Mvoid;
 }
 
 /* ----------------------------------------------------------------------
@@ -337,6 +413,7 @@ void prims_register_all(void) {
     prim_register("number?",     prim_number_p,     1,  1);
     prim_register("procedure?",  prim_procedure_p,  1,  1);
     prim_register("vector?",     prim_vector_p,     1,  1);
+    prim_register("string?",     prim_string_p,     1,  1);
     prim_register("char?",       prim_char_p,       1,  1);
     prim_register("eof-object?", prim_eof_object_p, 1,  1);
 
@@ -352,6 +429,15 @@ void prims_register_all(void) {
     prim_register("vector-ref",    prim_vector_ref,    2,  2);
     prim_register("vector-set!",   prim_vector_set,    3,  3);
     prim_register("vector-length", prim_vector_length, 1,  1);
+
+    /* Strings (predicates / measurement / construction / indexing).
+     * Comparison, conversion, concat, and I/O land in later batches. */
+    prim_register("make-string",   prim_make_string,   1,  2);
+    prim_register("string",        prim_string,        0, -1);
+    prim_register("string-copy",   prim_string_copy,   1,  1);
+    prim_register("string-ref",    prim_string_ref,    2,  2);
+    prim_register("string-set!",   prim_string_set,    3,  3);
+    prim_register("string-length", prim_string_length, 1,  1);
 
     /* Arithmetic */
     prim_register("+",              prim_add,              0, -1);

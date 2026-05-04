@@ -812,6 +812,77 @@ static void test_vectors(void) {
     Mshutdown();
 }
 
+static void test_strings(void) {
+    Minit();
+    /* string? — added to the type-predicate group. */
+    CHECK(Mtruep(eval_str("(string? \"\")")),       "string?: empty");
+    CHECK(Mtruep(eval_str("(string? \"hi\")")),     "string?: nonempty");
+    CHECK(Mfalsep(eval_str("(string? 'foo)")),       "string?: symbol is not");
+    CHECK(Mfalsep(eval_str("(string? #\\a)")),       "string?: char is not");
+    CHECK(Mfalsep(eval_str("(string? '(1 2))")),     "string?: list is not");
+
+    /* string-length on literals (parsed) and constructed. */
+    CHECK(Mfixnum_val(eval_str("(string-length \"\")")) == 0,
+          "string-length: empty");
+    CHECK(Mfixnum_val(eval_str("(string-length \"hello\")")) == 5,
+          "string-length: hello");
+
+    /* make-string: 1-arg form fills with #\space; 2-arg form fills
+     * with the supplied char. */
+    {
+        mobj s = eval_str("(make-string 4 #\\x)");
+        CHECK(Mstringp(s) && Mstring_length(s) == 4, "make-string: length 4");
+        CHECK(Mstring_ref(s, 0) == 'x' && Mstring_ref(s, 3) == 'x',
+              "make-string: fill x");
+    }
+    {
+        mobj s = eval_str("(make-string 3)");
+        CHECK(Mstringp(s) && Mstring_length(s) == 3, "make-string: default len 3");
+        CHECK(Mstring_ref(s, 1) == ' ',              "make-string: default fill is space");
+    }
+
+    /* (string c1 c2 ...) packs each char as one byte. */
+    {
+        mobj s = eval_str("(string)");
+        CHECK(Mstringp(s) && Mstring_length(s) == 0, "string: zero args");
+    }
+    {
+        mobj s = eval_str("(string #\\h #\\i)");
+        CHECK(Mstring_length(s) == 2, "string: length 2");
+        CHECK(Mstring_ref(s, 0) == 'h' && Mstring_ref(s, 1) == 'i',
+              "string: contents hi");
+    }
+
+    /* string-copy — fresh allocation; equal contents but not eq?. */
+    eval_seq("(define src \"abc\") (define dup (string-copy src))");
+    CHECK(Mtruep(eval_str("(equal? src dup)")),
+          "string-copy: equal? source");
+    CHECK(Mfalsep(eval_str("(eq? src dup)")),
+          "string-copy: not eq? source (fresh allocation)");
+    /* Mutating the copy doesn't touch the source. */
+    eval_seq("(string-set! dup 0 #\\Z)");
+    CHECK(Mfalsep(eval_str("(equal? src dup)")),
+          "string-copy: independent storage");
+    CHECK(Mtruep(eval_str("(equal? src \"abc\")")),
+          "string-copy: source unchanged after copy mutation");
+
+    /* string-ref. */
+    CHECK(eval_str("(string-ref \"hello\" 0)") == Mchar('h'),
+          "string-ref: [0]=#\\h");
+    CHECK(eval_str("(string-ref \"hello\" 4)") == Mchar('o'),
+          "string-ref: [4]=#\\o");
+
+    /* string-set! mutates in place and returns void. */
+    eval_seq(
+        "(define mut (make-string 3 #\\a))"
+        "(string-set! mut 1 #\\B)");
+    CHECK(Mtruep(eval_str("(equal? mut \"aBa\")")),
+          "string-set!: mutation visible via equal?");
+    CHECK(eval_str("(string-ref mut 1)") == Mchar('B'),
+          "string-set!: ref returns the new char");
+    Mshutdown();
+}
+
 static void test_equality(void) {
     Minit();
     /* eq?: word-level equality. Same fixnum, same symbol (interned),
@@ -886,6 +957,21 @@ static void test_equality(void) {
     CHECK(Mfalsep(eval_str(
         "(equal? (lambda (x) x) (lambda (x) x))")),
                                                           "equal?: distinct closures");
+
+    /* Strings: structural compare on bytes. Two literals with the
+     * same contents land at distinct heap addresses but are equal?. */
+    CHECK(Mtruep(eval_str("(equal? \"\" \"\")")),
+          "equal?: empty strings");
+    CHECK(Mtruep(eval_str("(equal? \"abc\" \"abc\")")),
+          "equal?: same-content strings");
+    CHECK(Mfalsep(eval_str("(equal? \"abc\" \"abd\")")),
+          "equal?: differing strings");
+    CHECK(Mfalsep(eval_str("(equal? \"abc\" \"abcd\")")),
+          "equal?: lengths differ");
+    /* Empty string and empty vector must not collide via the hash
+     * either — distinct seeds were chosen for that. */
+    CHECK(Mfalsep(eval_str("(equal? \"\" #())")),
+          "equal?: empty string vs empty vector");
     Mshutdown();
 }
 
@@ -1197,6 +1283,7 @@ int main(void) {
     test_pairs();
     test_list();
     test_vectors();
+    test_strings();
     test_equality();
     test_arith_fixnum();
     test_arith_compare();
